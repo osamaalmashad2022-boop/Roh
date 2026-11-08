@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
-import { HeroClassId, WeaponSlotId, ARENA_PLATFORMS, groundHeightAt } from './rules';
+import {
+  HeroClassId,
+  WeaponSlotId,
+  ARENA_PLATFORMS,
+  SANCTUARY_SHRINES,
+  ScarabPropKind,
+  groundHeightAt,
+} from './rules';
 import sandstoneUrl from '../assets/images/egyptian_sandstone_tile_1793842861639.jpg';
 import reliefUrl from '../assets/images/karnak_limestone_relief_1793842862324.jpg';
 
@@ -19,6 +26,10 @@ export type ProjectileVisualKind =
   | 'vortex_wave'
   | 'phantom_rail'
   | 'psychic_kunai'
+  | 'arc_bolt'
+  | 'emp_orb'
+  | 'frost_lance'
+  | 'ice_shard'
   | 'rival_bolt';
 
 export interface CharacterRig {
@@ -93,6 +104,10 @@ export function getWeaponVisualKind(heroClass: HeroClassId, slot: WeaponSlotId):
       return slot === 1 ? 'sea_trident' : 'vortex_wave';
     case 'sniper':
       return slot === 1 ? 'phantom_rail' : 'psychic_kunai';
+    case 'tesla':
+      return slot === 1 ? 'arc_bolt' : 'emp_orb';
+    case 'claudia':
+      return slot === 1 ? 'frost_lance' : 'ice_shard';
   }
 }
 
@@ -331,6 +346,20 @@ export function createHeroRig(heroClass: HeroClassId, isRival = false): Characte
       accent: 0x22d3ee,
       linen: 0xe2e8f0,
       obsidian: 0x090d16,
+    },
+    tesla: {
+      cloak: isRival ? 0x7c2d12 : 0x1e3a8a,
+      armor: 0xfacc15,
+      accent: 0x38bdf8,
+      linen: 0xfef9c3,
+      obsidian: 0x0f172a,
+    },
+    claudia: {
+      cloak: isRival ? 0x4c0519 : 0x083344,
+      armor: 0xe2e8f0,
+      accent: 0x67e8f9,
+      linen: 0xecfeff,
+      obsidian: 0x0f172a,
     },
   }[heroClass];
 
@@ -743,6 +772,35 @@ export function createHeroRig(heroClass: HeroClassId, isRival = false): Characte
     const crestCenter = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.38, 6), lapisAccentMat);
     crestCenter.position.set(0, 0.32, 0.06);
     headGroup.add(nemesMesh, crestCenter);
+  } else if (heroClass === 'tesla') {
+    // Tesla's Arc Engineer Helmet + Twin Copper Induction Coils
+    const capMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.2, 14), goldMat);
+    capMesh.position.set(0, 0.14, 0);
+    const coilL = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.025, 8, 16), lapisAccentMat);
+    coilL.position.set(-0.22, 0.24, 0);
+    coilL.rotation.y = Math.PI / 2;
+    const coilR = coilL.clone();
+    coilR.position.x = 0.22;
+    const antenna = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), solarGlowMat);
+    antenna.position.set(0, 0.34, 0.06);
+    headGroup.add(capMesh, coilL, coilR, antenna);
+  } else if (heroClass === 'claudia') {
+    // Claudia's Glacial Tiara Crown + Floating Frost Crystal Halo
+    const tiara = new THREE.Mesh(
+      new THREE.TorusGeometry(0.2, 0.028, 8, 20).rotateX(Math.PI / 2),
+      goldMat
+    );
+    tiara.position.set(0, 0.14, 0);
+    for (let c = -1; c <= 1; c++) {
+      const spire = new THREE.Mesh(
+        new THREE.ConeGeometry(0.045, c === 0 ? 0.36 : 0.24, 4),
+        lapisAccentMat
+      );
+      spire.position.set(c * 0.12, 0.28, 0.12 - Math.abs(c) * 0.04);
+      spire.rotation.z = -c * 0.25;
+      headGroup.add(spire);
+    }
+    headGroup.add(tiara);
   } else {
     const hoodMesh = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.42, 10), obsidianMat);
     hoodMesh.position.set(0, 0.1, -0.02);
@@ -1363,6 +1421,69 @@ export function createHeroRig(heroClass: HeroClassId, isRival = false): Characte
     turbineRotor.position.set(0, 0.04, 0.64);
     weaponSpinParts.push(turbineRotor);
     secondaryWeaponMeshGroup.add(cannonShroud, goldBanding, turbineRotor);
+  } else if (heroClass === 'tesla') {
+    // =========================================================================
+    // [1] ARC COIL LAUNCHER (Tesla's Triple-Ring Magnetic Lightning Rifle)
+    // =========================================================================
+    const coilCore = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.065, 0.085, 1.15, 14).rotateX(Math.PI / 2),
+      obsidianMat
+    );
+    coilCore.position.set(0, 0.04, 0.28);
+    primaryWeaponMeshGroup.add(coilCore);
+    [0.05, 0.36, 0.68].forEach((zPos, idx) => {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.14 - idx * 0.015, 0.024, 8, 22),
+        idx % 2 === 0 ? goldMat : lapisAccentMat
+      );
+      ring.position.set(0, 0.04, zPos);
+      primaryWeaponMeshGroup.add(ring);
+      weaponSpinParts.push(ring);
+    });
+    const sparkTip = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 1), solarGlowMat);
+    sparkTip.position.set(0, 0.04, 0.88);
+    weaponSpinParts.push(sparkTip);
+    primaryWeaponMeshGroup.add(sparkTip);
+
+    // =========================================================================
+    // [2] EMP PULSE CANNON (Heavy Twin-Capacitor Plasma Orb Launcher)
+    // =========================================================================
+    const empBody = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 0.86), goldMat);
+    empBody.position.set(0, 0.02, 0.22);
+    const empOrb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17, 1), lapisAccentMat);
+    empOrb.position.set(0, 0.05, 0.74);
+    const empCage = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.022, 8, 24), solarGlowMat);
+    empCage.position.set(0, 0.05, 0.74);
+    weaponSpinParts.push(empOrb, empCage);
+    secondaryWeaponMeshGroup.add(empBody, empOrb, empCage);
+  } else if (heroClass === 'claudia') {
+    // =========================================================================
+    // [1] GLACIAL SCEPTER (Claudia's Cryo-Crystal Archmage Staff)
+    // =========================================================================
+    const cryoShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.026, 1.72, 12), goldMat);
+    primaryWeaponMeshGroup.add(cryoShaft);
+    const cryoCrown = new THREE.Group();
+    cryoCrown.position.set(0, 0.88, 0);
+    const frostDiamond = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), lapisAccentMat);
+    frostDiamond.scale.set(0.85, 1.45, 0.85);
+    const frostRing1 = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.022, 8, 24), goldMat);
+    const frostRing2 = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.018, 8, 20), lapisAccentMat);
+    frostRing2.rotation.x = Math.PI / 2;
+    cryoCrown.add(frostDiamond, frostRing1, frostRing2);
+    weaponSpinParts.push(frostRing1, frostRing2);
+    primaryWeaponMeshGroup.add(cryoCrown);
+
+    // =========================================================================
+    // [2] FROSTBITE SHARDS (3 Levitating Sub-Zero Ice Prisms)
+    // =========================================================================
+    const shardGeo = new THREE.OctahedronGeometry(0.12, 0);
+    [-0.24, 0, 0.24].forEach((ox, idx) => {
+      const sMesh = new THREE.Mesh(shardGeo, lapisAccentMat);
+      sMesh.scale.set(0.65, 1.85, 0.65);
+      sMesh.position.set(ox, 0.1 + (idx === 1 ? 0.14 : 0), 0.34);
+      weaponSpinParts.push(sMesh);
+      secondaryWeaponMeshGroup.add(sMesh);
+    });
   } else {
     // =========================================================================
     // [1] PHANTOM LONGRIFLE (Chiyo's Magnetic Accelerator Rail-Sniper Rifle)
@@ -1508,6 +1629,9 @@ export function createHeroRig(heroClass: HeroClassId, isRival = false): Characte
   dragonBodyGroup.add(wingL, wingR);
   const dragonWings = [wingL, wingR];
 
+  // 3-Mode Environmental Prop Disguises inside propDisguiseGroup:
+  // [0] Amphora Urn, [1] Sandstone Boulder, [2] Mini Obelisk Pillar
+  const amphoraProp = new THREE.Group();
   const urnPoints = [
     new THREE.Vector2(0.02, 0),
     new THREE.Vector2(0.28, 0.08),
@@ -1522,7 +1646,26 @@ export function createHeroRig(heroClass: HeroClassId, isRival = false): Characte
     goldMat
   );
   urnRim.position.y = 0.98;
-  propDisguiseGroup.add(urnMesh, urnRim);
+  amphoraProp.add(urnMesh, urnRim);
+
+  const boulderProp = new THREE.Group();
+  const boulderMesh = new THREE.Mesh(new THREE.DodecahedronGeometry(0.68, 1), linenMat);
+  boulderMesh.scale.set(1.25, 0.88, 1.15);
+  boulderMesh.position.y = 0.48;
+  boulderProp.add(boulderMesh);
+  boulderProp.visible = false;
+
+  const obeliskProp = new THREE.Group();
+  const miniShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.34, 1.35, 4), obsidianMat);
+  miniShaft.rotation.y = Math.PI / 4;
+  miniShaft.position.y = 0.68;
+  const miniCap = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.38, 4), goldMat);
+  miniCap.rotation.y = Math.PI / 4;
+  miniCap.position.y = 1.54;
+  obeliskProp.add(miniShaft, miniCap);
+  obeliskProp.visible = false;
+
+  propDisguiseGroup.add(amphoraProp, boulderProp, obeliskProp);
 
   let telegraphRing: THREE.Mesh | undefined;
   let laserSight: THREE.Line | undefined;
@@ -1640,6 +1783,8 @@ export function updateCharacterVisualState(
     isMounted: boolean;
     isDownedScarab: boolean;
     isPropDisguised?: boolean;
+    propDisguiseKind?: ScarabPropKind;
+    isGliding?: boolean;
     isLocalScoped?: boolean;
     isAuraActive?: boolean;
     auraType?:
@@ -1649,9 +1794,12 @@ export function updateCharacterVisualState(
       | 'whirl_dance'
       | 'waters_curse'
       | 'bulwark_shield'
-      | 'corsair_surge';
+      | 'corsair_surge'
+      | 'magnetic_surge'
+      | 'ice_block';
     activeWeaponSlot?: WeaponSlotId;
     forgeLevel?: number;
+    armorTier?: number;
     weaponRecoilTimer?: number;
     weaponSwapTimer?: number;
     weaponReloadTimer?: number;
@@ -1675,7 +1823,7 @@ export function updateCharacterVisualState(
   const strafe = params.strafeRatio ?? 0;
   const dashProg = params.dashProgress ?? 0;
   const airVy = params.airborneVy ?? 0;
-  const isAirborne = Math.abs(airVy) > 0.6;
+  const isAirborne = Math.abs(airVy) > 0.6 || Boolean(params.isGliding);
   const recoil = Math.max(0, params.weaponRecoilTimer ?? 0);
   const swapTimer = Math.max(0, params.weaponSwapTimer ?? 0);
   const reloadTimer = Math.max(0, params.weaponReloadTimer ?? 0);
@@ -1712,8 +1860,15 @@ export function updateCharacterVisualState(
 
   rig.scarabGroup.visible = params.isDownedScarab;
   if (params.isDownedScarab) {
-    rig.dragonBodyGroup.visible = !params.isPropDisguised;
-    rig.propDisguiseGroup.visible = Boolean(params.isPropDisguised);
+    const pKind = params.propDisguiseKind ?? (params.isPropDisguised ? 'amphora' : 'none');
+    const disguised = pKind !== 'none';
+    rig.dragonBodyGroup.visible = !disguised;
+    rig.propDisguiseGroup.visible = disguised;
+    if (disguised && rig.propDisguiseGroup.children.length >= 3) {
+      rig.propDisguiseGroup.children[0].visible = pKind === 'amphora';
+      rig.propDisguiseGroup.children[1].visible = pKind === 'boulder';
+      rig.propDisguiseGroup.children[2].visible = pKind === 'obelisk';
+    }
     rig.dragonBodyGroup.position.y = 0.15 + Math.sin(tIdle * 5.5) * 0.1;
     const flap = Math.sin(tIdle * 14.0) * 0.55;
     if (rig.dragonWings[0]) rig.dragonWings[0].rotation.z = 0.25 + flap;
@@ -1722,6 +1877,13 @@ export function updateCharacterVisualState(
 
   rig.humanoidGroup.visible = !params.isDownedScarab && !params.isLocalScoped;
   rig.mountGroup.visible = !params.isDownedScarab && params.isMounted && !params.isLocalScoped;
+  rig.nightWingsGroup.visible =
+    !params.isLocalScoped && (rig.heroClass === 'mage' || Boolean(params.isGliding));
+  if (params.isGliding) {
+    rig.nightWingsGroup.scale.setScalar(1.65);
+  } else {
+    rig.nightWingsGroup.scale.setScalar(1.0);
+  }
 
   const slot = params.activeWeaponSlot || 1;
   rig.primaryWeaponMeshGroup.visible = slot === 1;
@@ -1780,18 +1942,19 @@ export function updateCharacterVisualState(
     rig.ravenShadeGroup.rotation.y += 0.09;
   }
 
-  // 3D Class Skill Aura, Bulwark Pop-Up Shield & Whirl Dance Blade Cyclone
+  // 3D Class Skill Aura, Legendary Lv4 Pharaoh Gold Aura, Bulwark Pop-Up Shield & Whirl Dance Blade Cyclone
   const auraMat = rig.classAuraRing.material as THREE.MeshBasicMaterial;
-  const showAura = Boolean(params.isAuraActive && !params.isLocalScoped);
+  const hasLegendaryArmorAura = (params.armorTier ?? 1) >= 4 && !params.isDownedScarab;
+  const showAura = Boolean((params.isAuraActive || hasLegendaryArmorAura) && !params.isLocalScoped);
   rig.classAuraOrbitGroup.visible = showAura;
-  rig.classAuraDome.visible = showAura && params.auraType === 'waters_curse';
-  rig.whirlCycloneGroup.visible = showAura && params.auraType === 'whirl_dance';
-  rig.frontShieldGroup.visible = showAura && params.auraType === 'bulwark_shield';
+  rig.classAuraDome.visible = Boolean(params.isAuraActive && !params.isLocalScoped && params.auraType === 'waters_curse');
+  rig.whirlCycloneGroup.visible = Boolean(params.isAuraActive && !params.isLocalScoped && params.auraType === 'whirl_dance');
+  rig.frontShieldGroup.visible = Boolean(params.isAuraActive && !params.isLocalScoped && params.auraType === 'bulwark_shield');
 
   if (showAura) {
-    auraMat.opacity = 0.78;
-    rig.classAuraRing.rotation.z += 0.09;
-    rig.classAuraOrbitGroup.rotation.y = -tIdle * 3.8;
+    auraMat.opacity = params.isAuraActive ? 0.78 : 0.58;
+    rig.classAuraRing.rotation.z += params.isAuraActive ? 0.09 : 0.045;
+    rig.classAuraOrbitGroup.rotation.y = -tIdle * (params.isAuraActive ? 3.8 : 2.2);
     rig.classAuraDome.rotation.y = tIdle * 2.2;
     if (rig.whirlCycloneGroup.visible) {
       rig.whirlCycloneGroup.rotation.y = tIdle * 14.0;
@@ -2210,6 +2373,30 @@ export function configureProjectileVisual(
       rig.accentRing.scale.set(1.2, 1.2, 1.2);
       rig.accentRing.rotation.x = Math.PI / 2;
       rig.finGroup.visible = true;
+      break;
+    case 'arc_bolt':
+      rig.coreMesh.scale.set(0.8, 0.8, 1.85);
+      rig.accentRing.scale.set(1.6, 1.6, 1.6);
+      rig.accentMat.color.setHex(0xfacc15);
+      rig.ribbonTrailGroup.scale.set(1.4, 1.4, 1.9);
+      break;
+    case 'emp_orb':
+      rig.coreMesh.scale.set(2.1, 2.1, 0.95);
+      rig.accentRing.scale.set(2.05, 2.05, 2.05);
+      rig.waveArcMesh.visible = true;
+      rig.ribbonTrailGroup.scale.set(1.75, 1.75, 1.6);
+      break;
+    case 'frost_lance':
+      rig.coreMesh.scale.set(0.9, 0.9, 1.9);
+      rig.finGroup.visible = true;
+      rig.accentRing.scale.set(1.45, 1.45, 1.45);
+      rig.accentMat.color.setHex(0xecfeff);
+      rig.ribbonTrailGroup.scale.set(1.3, 1.3, 1.75);
+      break;
+    case 'ice_shard':
+      rig.coreMesh.scale.set(1.15, 0.55, 1.1);
+      rig.finGroup.visible = true;
+      rig.accentRing.scale.set(1.15, 1.15, 1.15);
       break;
     default:
       rig.coreMesh.scale.set(0.9, 0.9, 1.0);
@@ -2813,6 +3000,39 @@ export function buildEgyptianArenaScene(
   crownInst.computeBoundingSphere();
   scene.add(trunkInst, crownInst);
 
+  // --- 4 SANCTUARY PRAYER SHRINES (North, East, South, West) ---
+  for (const shrine of SANCTUARY_SHRINES) {
+    const sy = groundHeightAt(shrine.x, shrine.z);
+    const sGroup = new THREE.Group();
+    sGroup.position.set(shrine.x, sy, shrine.z);
+
+    const altarBase = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 2.4, 0.55, 8), templeStoneMat);
+    altarBase.position.y = 0.27;
+    const altarGoldRing = new THREE.Mesh(
+      new THREE.TorusGeometry(2.1, 0.08, 8, 28).rotateX(Math.PI / 2),
+      royalGoldMat
+    );
+    altarGoldRing.position.y = 0.12;
+
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.65, 2.4, 6), royalGoldMat);
+    pillar.position.y = 1.65;
+
+    const relicMat = new THREE.MeshBasicMaterial({ color: shrine.colorHex });
+    const floatingAnkhCrystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), relicMat);
+    floatingAnkhCrystal.position.y = 3.45;
+    beaconRings.push(floatingAnkhCrystal);
+
+    const halo = new THREE.Mesh(
+      new THREE.TorusGeometry(0.95, 0.045, 8, 24),
+      new THREE.MeshBasicMaterial({ color: shrine.colorHex, transparent: true, opacity: 0.78 })
+    );
+    halo.position.y = 3.45;
+    beaconRings.push(halo);
+
+    sGroup.add(altarBase, altarGoldRing, pillar, floatingAnkhCrystal, halo);
+    scene.add(sGroup);
+  }
+
   return {
     environmentObstacles,
     beaconRings,
@@ -3022,4 +3242,72 @@ export function decoratePharaohBossRig(rig: CharacterRig): THREE.Group {
   rig.root.add(bossCrownGroup);
   return bossCrownGroup;
 }
+
+export interface TeslaTurretVisualRig {
+  group: THREE.Group;
+  coilHead: THREE.Group;
+  arcRing: THREE.Mesh;
+  rangeRing: THREE.Mesh;
+}
+
+/**
+ * Builds Tesla's deployable 3D Lightning Turret ([Q] ability) that automatically
+ * tracks and zaps nearby rivals in the arena.
+ */
+export function createTeslaTurretRig(): TeslaTurretVisualRig {
+  const group = new THREE.Group();
+  group.visible = false;
+  group.add(createContactShadowDisc(1.15));
+
+  const baseMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
+    roughness: 0.35,
+    metalness: 0.85,
+  });
+  const goldMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    roughness: 0.2,
+    metalness: 0.92,
+  });
+  const arcMat = new THREE.MeshBasicMaterial({
+    color: 0x38bdf8,
+  });
+
+  const tripodBase = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.88, 0.42, 6), baseMat);
+  tripodBase.position.y = 0.21;
+  const centralPylon = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 1.35, 10), goldMat);
+  centralPylon.position.y = 0.95;
+
+  const coilHead = new THREE.Group();
+  coilHead.position.set(0, 1.78, 0);
+  const coreSphere = new THREE.Mesh(new THREE.OctahedronGeometry(0.34, 1), arcMat);
+  const emitterBarrel = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.12, 0.65, 8).rotateX(Math.PI / 2),
+    goldMat
+  );
+  emitterBarrel.position.set(0, 0, 0.36);
+  coilHead.add(coreSphere, emitterBarrel);
+
+  const arcRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.58, 0.035, 8, 24).rotateX(Math.PI / 2),
+    arcMat
+  );
+  arcRing.position.y = 1.45;
+
+  const rangeRing = new THREE.Mesh(
+    new THREE.RingGeometry(17.6, 18.0, 48).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.32,
+      depthWrite: false,
+    })
+  );
+  rangeRing.position.y = 0.06;
+
+  group.add(tripodBase, centralPylon, coilHead, arcRing, rangeRing);
+  return { group, coilHead, arcRing, rangeRing };
+}
+
 

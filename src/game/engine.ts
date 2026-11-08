@@ -404,7 +404,7 @@ export function computeStormAwareEnemyVelocity(params: {
 
   // 2. Tangential Obstacle Avoidance (prevents AI rivals from getting wedged on Obelisks/Perches)
   for (const plat of ARENA_PLATFORMS) {
-    if (plat.id === 'sanctuary-dais') continue;
+    if (plat.id === 'dais-center' || plat.type === 'temple_dais') continue;
     const dx = enemyX - plat.x;
     const dz = enemyZ - plat.z;
     const dist = Math.hypot(dx, dz);
@@ -522,7 +522,7 @@ export interface ClassBalanceAuditReport {
 }
 
 /**
- * Audits all 7 Hero Classes, 14 Weapons, 28 Skills (Q/E/C/R), and Arena Landmarks
+ * Audits all 9 Hero Classes, 18 Weapons, 36 Skills (Q/E/C/R), and Arena Landmarks
  * for strict schema integrity, competitive DPS parity, and cooldown balance.
  */
 export function auditAllHeroClassesAndBalance(): ClassBalanceAuditReport {
@@ -534,6 +534,8 @@ export function auditAllHeroClassesAndBalance(): ClassBalanceAuditReport {
     'mage',
     'warrior',
     'sniper',
+    'tesla',
+    'claudia',
   ];
   const issues: string[] = [];
   const metrics = {} as Record<HeroClassId, ClassBalanceMetrics>;

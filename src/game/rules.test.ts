@@ -25,6 +25,15 @@ import {
   resolveSafeTeleportPosition,
   checkProjectile3DHit,
   selectBoundedAoETargets,
+  computeRelicBonuses,
+  computeArmorMitigatedDamage,
+  cycleScarabPropDisguise,
+  canRivalDetectDisguisedPlayer,
+  formatPropDisguiseLabel,
+  computeEffectivePlayerVitals,
+  evaluateRivalTacticalUpgradeAndHeal,
+  SANCTUARY_SHRINES,
+  ALL_RELIC_IDS,
 } from './rules';
 import {
   auditAllHeroClassesAndBalance,
@@ -38,7 +47,7 @@ import {
   computeAISkirmishPacing,
 } from './engine';
 
-test('All 7 Ride Out Heroes classes (including Ragnar Pirate King) have unique occupational weapons and distinct Q/E/C/R skills', () => {
+test('All 9 Ride Out Heroes classes (including Ragnar, Tesla, and Claudia) have unique occupational weapons and distinct Q/E/C/R skills', () => {
   const ranger = HERO_CLASSES.ranger;
   assert.equal(ranger.shortLabel, 'RANGER');
   assert.equal(ranger.primaryWeapon, 'Cross Longbow');
@@ -61,8 +70,20 @@ test('All 7 Ride Out Heroes classes (including Ragnar Pirate King) have unique o
   assert.equal(ragnar.abilities.c.name, 'Wave Vortex');
   assert.equal(ragnar.abilities.r.name, 'Ghost Fleet Broadside');
 
+  const tesla = HERO_CLASSES.tesla;
+  assert.equal(tesla.shortLabel, 'TESLA');
+  assert.equal(tesla.primaryWeapon, 'Arc Coil Launcher');
+  assert.equal(tesla.secondaryWeapon, 'EMP Pulse Cannon');
+  assert.equal(tesla.abilities.q.name, 'Lightning Turret');
+
+  const claudia = HERO_CLASSES.claudia;
+  assert.equal(claudia.shortLabel, 'CLAUDIA');
+  assert.equal(claudia.primaryWeapon, 'Glacial Scepter');
+  assert.equal(claudia.secondaryWeapon, 'Frostbite Shards');
+  assert.equal(claudia.abilities.q.name, 'Ice Block Sanctuary');
+
   const classIds = Object.keys(HERO_CLASSES) as HeroClassId[];
-  assert.equal(classIds.length, 7);
+  assert.equal(classIds.length, 9);
 
   const qSkills = new Set(classIds.map((c) => HERO_CLASSES[c].abilities.q.name));
   const eSkills = new Set(classIds.map((c) => HERO_CLASSES[c].abilities.e.name));
@@ -70,11 +91,11 @@ test('All 7 Ride Out Heroes classes (including Ragnar Pirate King) have unique o
   const rSkills = new Set(classIds.map((c) => HERO_CLASSES[c].abilities.r.name));
   const primaryWeapons = new Set(classIds.map((c) => HERO_CLASSES[c].primaryWeapon));
 
-  assert.equal(qSkills.size, 7, 'Every hero must have a distinct Q skill');
-  assert.equal(eSkills.size, 7, 'Every hero must have a distinct E skill');
-  assert.equal(cSkills.size, 7, 'Every hero must have a distinct C skill');
-  assert.equal(rSkills.size, 7, 'Every hero must have a distinct R skill');
-  assert.equal(primaryWeapons.size, 7, 'Every hero must have a distinct primary occupational weapon');
+  assert.equal(qSkills.size, 9, 'Every hero must have a distinct Q skill');
+  assert.equal(eSkills.size, 9, 'Every hero must have a distinct E skill');
+  assert.equal(cSkills.size, 9, 'Every hero must have a distinct C skill');
+  assert.equal(rSkills.size, 9, 'Every hero must have a distinct R skill');
+  assert.equal(primaryWeapons.size, 9, 'Every hero must have a distinct primary occupational weapon');
 });
 
 test('calculatePrecisionShotDamage scales with draw charge, Steady Aim scope, Raven Shade ambush, high ground, Hunter Orb mark, and Forge tier', () => {
@@ -107,11 +128,11 @@ test('calculatePrecisionShotDamage scales with draw charge, Steady Aim scope, Ra
   assert.ok(sniperAmbushCrit.tags.includes('WEAK-POINT CRIT'));
 });
 
-test('Ride Out Heroes Baby Dragon Relic intercepts lethal damage and resurrects after timer', () => {
+test('Ride Out Heroes Baby Dragon Relic intercepts lethal damage (12s standard / 8.5s Ankh) and resurrects after timer', () => {
   const initial = {
     isDownedScarab: false,
     scarabTimer: 0,
-    scarabMaxDuration: 6,
+    scarabMaxDuration: 12,
     relicReady: true,
     relicCooldown: 0,
     hp: 50,
@@ -124,9 +145,13 @@ test('Ride Out Heroes Baby Dragon Relic intercepts lethal damage and resurrects 
   assert.equal(hitResult.enteredScarab, true);
   assert.equal(hitResult.eliminated, false);
   assert.equal(hitResult.nextState.isDownedScarab, true);
+  assert.equal(hitResult.nextState.scarabTimer, 12.0);
   assert.equal(hitResult.nextState.relicReady, false);
 
-  const reviveResult = tickScarabRelic(hitResult.nextState, 6.1);
+  const ankhHit = applyDamageWithScarabRelic(initial, 90, true);
+  assert.equal(ankhHit.nextState.scarabTimer, 8.5);
+
+  const reviveResult = tickScarabRelic(hitResult.nextState, 12.1);
   assert.equal(reviveResult.resurrected, true);
   assert.equal(reviveResult.nextState.isDownedScarab, false);
   assert.equal(reviveResult.nextState.hp, 78);
@@ -236,7 +261,7 @@ test('100-Player Battle Royale roster generator and 5-phase Solar Sandstorm shri
   assert.equal(roster.length, 99, 'Should generate 99 rival Outriders to join the 1 player = 100 total');
 
   const classesInRoster = new Set(roster.map((r) => r.heroClass));
-  assert.equal(classesInRoster.size, 7, 'All 7 hero classes must be represented in the 100-player roster');
+  assert.equal(classesInRoster.size, 9, 'All 9 hero classes must be represented in the 100-player roster');
 
   for (const r of roster) {
     const dist = Math.hypot(r.spawnX, r.spawnZ);
@@ -266,17 +291,19 @@ test('100-Player Battle Royale roster generator and 5-phase Solar Sandstorm shri
   assert.equal(computeBattleRoyaleRank(0, false), 1);
 });
 
-test('Full 7-Class, 14-Weapon, and 28-Skill combat balance audit passes with zero schema or DPS issues', () => {
+test('Full 9-Class, 18-Weapon, and 36-Skill combat balance audit passes with zero schema or DPS issues', () => {
   const report = auditAllHeroClassesAndBalance();
   assert.equal(report.valid, true, `Balance audit issues: ${report.issues.join(', ')}`);
-  assert.equal(report.classCount, 7);
-  assert.equal(report.weaponCount, 14);
-  assert.equal(report.skillCount, 28);
+  assert.equal(report.classCount, 9);
+  assert.equal(report.weaponCount, 18);
+  assert.equal(report.skillCount, 36);
   assert.equal(report.arenaRadius, 135);
   assert.equal(report.landmarkCount, 17, 'Arena should include all 17 inner and outer Battle Royale landmarks');
 
-  // Verify Ragnar and Robin have well-balanced survivability and high-ceiling precision damage
+  // Verify Ragnar, Tesla, Claudia, and Robin have well-balanced survivability and high-ceiling precision damage
   assert.ok(report.metrics.ragnar.survivabilityPool >= 220);
+  assert.ok(report.metrics.tesla.survivabilityPool >= 175);
+  assert.ok(report.metrics.claudia.survivabilityPool >= 175);
   assert.ok(report.metrics.ranger.slot1MaxChargedHeadshot >= 110);
 });
 
@@ -495,5 +522,83 @@ test('100-Player Battle Royale AI-vs-AI skirmish pacer prevents early lobby wipe
   assert.equal(finaleProtection.nextTargetHp, 22);
 });
 
+test('Ride Out Heroes Relics, 4-Tier Armor mitigation, Sanctuary Shrines, and Multi-Prop Disguise Stealth work accurately', () => {
+  // 1. 6-Slot Relics aggregate bonuses cleanly
+  assert.equal(ALL_RELIC_IDS.length, 6);
+  assert.equal(SANCTUARY_SHRINES.length, 4);
+  const fullBonuses = computeRelicBonuses(ALL_RELIC_IDS);
+  assert.equal(fullBonuses.speedMultiplier, 1.12);
+  assert.equal(fullBonuses.cooldownMultiplier, 0.82);
+  assert.equal(fullBonuses.damageMultiplier, 1.16);
+  assert.equal(fullBonuses.hasAnkhFastRevive, true);
+  assert.equal(fullBonuses.bonusMaxHp, 30);
+  assert.equal(fullBonuses.bonusMaxShield, 35);
+  assert.equal(fullBonuses.lifestealRatio, 0.15);
 
+  // 2. 4-Tier Armor mitigates incoming damage (Lv1: 5%, Lv2: 12%, Lv3: 20%, Lv4: 28%)
+  assert.equal(computeArmorMitigatedDamage(100, 1), 95);
+  assert.equal(computeArmorMitigatedDamage(100, 2), 88);
+  assert.equal(computeArmorMitigatedDamage(100, 3), 80);
+  assert.equal(computeArmorMitigatedDamage(100, 4), 72);
+
+  // 3. Multi-Prop Scarab Disguise cycles through Amphora -> Boulder -> Obelisk -> None and reduces AI detection radius to 3.5m
+  const p1 = cycleScarabPropDisguise('none');
+  const p2 = cycleScarabPropDisguise(p1);
+  const p3 = cycleScarabPropDisguise(p2);
+  const p4 = cycleScarabPropDisguise(p3);
+  assert.equal(p1, 'amphora');
+  assert.equal(p2, 'boulder');
+  assert.equal(p3, 'obelisk');
+  assert.equal(p4, 'none');
+
+  assert.equal(canRivalDetectDisguisedPlayer(15, true, 'none'), true);
+  assert.equal(canRivalDetectDisguisedPlayer(15, true, 'amphora'), false);
+  assert.equal(canRivalDetectDisguisedPlayer(3.2, true, 'amphora'), true);
+});
+
+test('Codebase Audit Fixes: Prop Disguise HUD labels, Mid-Match Class Switch Vitals Preservation, Tactical Rival AI Potions/Armor, and Center Dais AI Pathing', () => {
+  // 1. Dynamic Prop Disguise HUD Labels
+  assert.equal(formatPropDisguiseLabel('amphora'), 'AMPHORA URN');
+  assert.equal(formatPropDisguiseLabel('boulder'), 'SANDSTONE BOULDER');
+  assert.equal(formatPropDisguiseLabel('obelisk'), 'MINI-OBELISK');
+  assert.equal(formatPropDisguiseLabel('none'), 'NONE');
+
+  // 2. Mid-Match Class Switch preserves Armor Tier Lv4 (+90 Shield) and Relic bonuses (+30 HP, +35 Shield)
+  const teslaVitals = computeEffectivePlayerVitals('tesla', 4, ALL_RELIC_IDS);
+  assert.equal(teslaVitals.maxHp, HERO_CLASSES.tesla.maxHp + 30);
+  assert.equal(teslaVitals.maxShield, HERO_CLASSES.tesla.maxShield + 90 + 35);
+
+  const claudiaVitals = computeEffectivePlayerVitals('claudia', 4, ALL_RELIC_IDS);
+  assert.equal(claudiaVitals.maxHp, HERO_CLASSES.claudia.maxHp + 30);
+  assert.equal(claudiaVitals.maxShield, HERO_CLASSES.claudia.maxShield + 90 + 35);
+
+  // 3. Tactical Rival AI upgrades armor tier with storm phase/kills and drinks emergency potion when <= 42% HP
+  const aiUpgradedAndHealed = evaluateRivalTacticalUpgradeAndHeal({
+    currentHp: 60,
+    maxHp: 180,
+    currentArmorTier: 1,
+    kills: 2,
+    stormPhase: 3,
+    potionCooldownSec: 0,
+  });
+  assert.equal(aiUpgradedAndHealed.upgradedArmor, true);
+  assert.equal(aiUpgradedAndHealed.nextArmorTier, 4);
+  assert.equal(aiUpgradedAndHealed.usedPotion, true);
+  assert.equal(aiUpgradedAndHealed.nextHp, 105, 'AI should gain +45 emergency potion heal');
+  assert.equal(aiUpgradedAndHealed.nextPotionCooldownSec, 18.0);
+
+  // 4. Center Sanctuary Forge Dais ('dais-center') does NOT repel AI moving across the center (x = -5 -> target x = +5)
+  const crossCenterDais = computeStormAwareEnemyVelocity({
+    policy: 'charger_vanguard',
+    enemyX: -5,
+    enemyZ: 0,
+    targetX: 5,
+    targetZ: 0,
+    baseSpeed: 8.0,
+    strafeSign: 1,
+    stormRadius: 130,
+    stormTargetRadius: 95,
+  });
+  assert.ok(crossCenterDais.vx > 7.5, 'AI on center Sanctuary Forge Dais should move directly toward target without repulsion');
+});
 

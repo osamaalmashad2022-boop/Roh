@@ -1,6 +1,6 @@
 {
-  "summary":  "خطة هندسية متكاملة لمراجعة وتطوير محرك لعبة Khepri: Outriders of the Sun (طور 100 مقاتل باتل رويال) بالاستناد إلى أحدث تقنيات تحسين الأداء والسلاسة (Spatial Hash Grid O(1)، Zero-GC Loop، AI Tick Slicing، AAA Spring-Damper Camera & Predictive Framing، Input Buffering، Smooth Step-Up Mantling، وAdaptive Quality Scaler).",
-  "updatedAt":  "2026-11-07T17:57:48.394160460Z",
+  "summary":  "Comprehensive Code Audit Bug-Fix & Tactical Enhancement Plan for Khepri: Outriders of the Sun (Ride Out Heroes Egyptian Reborn), covering all 6 verified audit fixes, O(1) spatial AoE/splash queries, Tactical Rival AI (potions, armor progression, shrine visits), Interactive Sky-Drop Landing Zone Selector on the Minimap, and Relic/Legendary Armor 3D & Audio Polish.",
+  "updatedAt":  "2026-11-08T20:58:53.678919437Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

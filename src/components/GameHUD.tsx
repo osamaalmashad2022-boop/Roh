@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { HeroClassId, WeaponSlotId, AbilitySlotId, HERO_CLASSES, ARENA_PLATFORMS } from '../game/rules';
+import {
+  HeroClassId,
+  WeaponSlotId,
+  AbilitySlotId,
+  HERO_CLASSES,
+  ARENA_PLATFORMS,
+  ARMOR_TIER_SPECS,
+  RELIC_CATALOG,
+  SANCTUARY_SHRINES,
+  formatPropDisguiseLabel,
+} from '../game/rules';
 import { LiveHUDTelemetry } from './ArenaCanvas';
 import { SyncedKillFeedEvent } from '../game/multiplayer';
 
@@ -20,6 +30,11 @@ interface GameHUDProps {
   onTriggerReload: () => void;
   onTriggerInspect: () => void;
   onTriggerForge: () => void;
+  onUseHealthPotion: () => void;
+  onUseShieldPotionOrDisguise: () => void;
+  onTriggerPrayerOrDisassemble: () => void;
+  onTriggerDiveNow: () => void;
+  onSelectSkyDropPin: (x: number, z: number) => void;
   onToggleScope: () => void;
   onFireQuickShot: () => void;
   onRequestMouseLock: () => void;
@@ -52,6 +67,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onTriggerReload,
   onTriggerInspect,
   onTriggerForge,
+  onUseHealthPotion,
+  onUseShieldPotionOrDisguise,
+  onTriggerPrayerOrDisassemble,
+  onTriggerDiveNow,
+  onSelectSkyDropPin,
   onToggleScope,
   onFireQuickShot,
   onRequestMouseLock,
@@ -240,6 +260,83 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           </div>
         </div>
 
+        {/* Aerial Sky-Drop & Wing Gliding Interactive Banner + Hot-Drop Zone Selector */}
+        {telemetry.isGliding && (
+          <div
+            data-testid="hud-sky-drop-banner"
+            className="px-3 py-1.5 rounded-lg border border-amber-400 bg-[#1a1107]/95 flex flex-wrap items-center justify-center gap-2 font-mono-num pointer-events-auto shadow-lg"
+            data-hud-interactive="true"
+          >
+            <span className="text-xs font-bold text-amber-300">
+              🦅 SKY-DROP · ALT {telemetry.glidingAltitude ?? 18}m
+              {telemetry.skyDropPin?.active
+                ? ` · 📍 PIN (${Math.round(telemetry.skyDropPin.x)}, ${Math.round(telemetry.skyDropPin.z)})`
+                : ' · CLICK MINIMAP TO PIN'}
+            </span>
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid="btn-drop-center"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                onSelectSkyDropPin(0, 0);
+              }}
+              className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/60 text-amber-200 text-[10px] font-bold transition-colors cursor-pointer"
+            >
+              📍 Center Forge
+            </button>
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid="btn-drop-shrine"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                const shrine = SANCTUARY_SHRINES[0];
+                onSelectSkyDropPin(shrine.x, shrine.z);
+              }}
+              className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/60 text-emerald-200 text-[10px] font-bold transition-colors cursor-pointer"
+            >
+              ⛩️ North Shrine
+            </button>
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid="btn-dive-now"
+              onClick={(e) => {
+                e.currentTarget.blur();
+                onTriggerDiveNow();
+              }}
+              className="px-2.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 text-[11px] font-bold transition-colors cursor-pointer"
+            >
+              ⚡ Dive Now [Space]
+            </button>
+          </div>
+        )}
+
+        {/* Interactive Sanctuary Prayer Shrine Proximity Prompt */}
+        {telemetry.nearbyShrineName && !telemetry.isDownedScarab && (
+          <div
+            data-testid="hud-shrine-proximity"
+            className="px-3.5 py-1 rounded-lg border border-emerald-400 bg-[#0d1f17]/95 flex items-center gap-2.5 font-mono-num pointer-events-auto shadow-lg"
+            data-hud-interactive="true"
+          >
+            <span className="text-xs font-bold text-emerald-300">
+              ⛩️ NEAR {telemetry.nearbyShrineName.toUpperCase()} · DISCOUNTED BLESSING (25g)
+            </span>
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={(e) => {
+                e.currentTarget.blur();
+                onTriggerPrayerOrDisassemble();
+              }}
+              className="px-2.5 py-0.5 rounded bg-emerald-500 hover:bg-emerald-400 text-stone-950 text-[10px] font-bold transition-colors cursor-pointer"
+            >
+              Pray & Upgrade [F]
+            </button>
+          </div>
+        )}
+
         {bossActive && telemetry.bossStatus && (
           <div
             className="w-[340px] sm:w-[420px] px-4 py-2 rounded-lg border border-amber-400/75"
@@ -413,7 +510,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               <div className="text-xs text-amber-100/85">
                 {telemetry.isDownedScarab
                   ? telemetry.isPropDisguised
-                    ? `PROP DISGUISE (URN) · ${telemetry.scarabRemaining.toFixed(1)}s`
+                    ? `PROP DISGUISE (${formatPropDisguiseLabel(telemetry.propDisguiseKind || 'amphora')}) · ${telemetry.scarabRemaining.toFixed(1)}s`
                     : `BABY DRAGON REVIVE · ${telemetry.scarabRemaining.toFixed(1)}s ([Q] Disguise)`
                   : telemetry.isCamouflaged
                   ? `${spec.abilities.q.name.toUpperCase()} · ${telemetry.camouflageRemaining.toFixed(1)}s`
@@ -488,13 +585,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             />
           </div>
 
-          <div className="mt-2 pt-1.5 border-t border-amber-500/20 flex items-center justify-between gap-4 text-[11px] font-mono-num">
-            <span className="text-amber-200/85 whitespace-nowrap">
-              ACCURACY{' '}
-              {telemetry.analytics && telemetry.analytics.shotsFired > 0
-                ? Math.min(100, Math.round((telemetry.analytics.shotsHit / telemetry.analytics.shotsFired) * 100))
-                : 0}
-              % · STREAK {telemetry.killstreak?.best ?? 0}x
+          <div className="mt-2 pt-1.5 border-t border-amber-500/20 flex items-center justify-between gap-2 text-[11px] font-mono-num">
+            <span
+              data-testid="hud-armor-badge"
+              className="font-bold whitespace-nowrap"
+              style={{ color: ARMOR_TIER_SPECS[telemetry.armorTier || 1].color }}
+            >
+              🛡️ {ARMOR_TIER_SPECS[telemetry.armorTier || 1].name} (-
+              {Math.round(ARMOR_TIER_SPECS[telemetry.armorTier || 1].damageReductionRatio * 100)}%)
             </span>
             <span
               className={
@@ -504,12 +602,57 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               }
             >
               {telemetry.isDownedScarab
-                ? `REVIVING IN ${telemetry.scarabRemaining.toFixed(1)}s`
+                ? `REVIVING ${telemetry.scarabRemaining.toFixed(1)}s (${(telemetry.propDisguiseKind || 'none').toUpperCase()})`
+                : telemetry.teslaTurretActive
+                ? `⚡ TURRET ${(telemetry.teslaTurretRemaining ?? 0).toFixed(1)}s`
                 : telemetry.relicReady
                 ? 'DRAGON READY'
                 : `RECHARGING ${Math.ceil(telemetry.relicCooldown)}s`}
             </span>
           </div>
+
+          {/* 6-Slot Ride Out Heroes Passive Relics Bar */}
+          <div
+            data-testid="hud-relics-bar"
+            className="mt-1.5 pt-1.5 border-t border-amber-500/20 flex items-center justify-between gap-1 text-[10px] font-mono-num"
+          >
+            <span className="text-amber-300/80 uppercase font-bold">
+              RELICS ({(telemetry.relics || ['sacred_ibis']).length}/6):
+            </span>
+            <div className="flex items-center gap-1 flex-wrap justify-end">
+              {(telemetry.relics || ['sacred_ibis']).map((rid) => {
+                const rSpec = RELIC_CATALOG[rid];
+                if (!rSpec) return null;
+                return (
+                  <span
+                    key={rid}
+                    title={`${rSpec.name}: ${rSpec.description}`}
+                    className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-400/40 text-amber-200 whitespace-nowrap"
+                  >
+                    ✦ {rSpec.shortTag}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Compact Live Loot, Relic & Armor Upgrade Feed */}
+          {telemetry.lootFeed && telemetry.lootFeed.length > 0 && (
+            <div
+              data-testid="hud-loot-feed"
+              className="mt-1.5 pt-1.5 border-t border-amber-500/20 flex flex-col gap-0.5 text-[10px] font-mono-num"
+            >
+              {telemetry.lootFeed.slice(0, 2).map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between gap-1 truncate"
+                  style={{ color: item.color }}
+                >
+                  <span className="truncate font-semibold">▸ {item.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Live Engine Self-Diagnostic Profiler (فحص الأداء والذاكرة اللحظي [F3]) */}
@@ -687,6 +830,16 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </div>
             <div className="h-6 w-[1px] bg-amber-500/25" />
             <div className="text-center font-mono-num">
+              <div className="text-[9px] uppercase tracking-wider text-yellow-300/85">GOLD</div>
+              <div
+                data-testid="hud-gold-coins"
+                className="text-lg font-bold text-yellow-300 leading-none mt-0.5 hud-stroke"
+              >
+                {telemetry.goldCoins ?? 60}
+              </div>
+            </div>
+            <div className="h-6 w-[1px] bg-amber-500/25" />
+            <div className="text-center font-mono-num">
               <div className="text-[9px] uppercase tracking-wider text-amber-400/80">SCORE</div>
               <div className="text-lg font-bold text-amber-300 leading-none mt-0.5 hud-stroke">
                 {telemetry.score}
@@ -806,7 +959,17 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <svg
             data-testid="hud-radar-minimap"
             viewBox={radarFullMap ? '-140 -140 280 280' : '-68 -68 136 136'}
-            className="w-24 h-24 rounded bg-[#0a0705] border border-amber-500/25 shrink-0"
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              if (rect.width <= 0 || rect.height <= 0) return;
+              const span = radarFullMap ? 280 : 136;
+              const half = span / 2;
+              const wx = ((e.clientX - rect.left) / rect.width) * span - half;
+              const wz = ((e.clientY - rect.top) / rect.height) * span - half;
+              onSelectSkyDropPin(wx, wz);
+            }}
+            aria-label="Click on Minimap to Set Sky-Drop Landing Pin"
+            className="w-24 h-24 rounded bg-[#0a0705] border border-amber-500/25 shrink-0 cursor-pointer hover:border-amber-400 transition-colors"
           >
             {/* Outer Arena Perimeter */}
             <circle cx="0" cy="0" r="135" fill="none" stroke="#451a03" strokeWidth="2" />
@@ -841,6 +1004,21 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 strokeWidth="1"
               />
             ))}
+            {telemetry.skyDropPin?.active && (() => {
+              const pActor = telemetry.minimapActors.find((a) => a.kind === 'player');
+              if (!pActor) return null;
+              return (
+                <line
+                  x1={pActor.x}
+                  y1={pActor.z}
+                  x2={telemetry.skyDropPin.x}
+                  y2={telemetry.skyDropPin.z}
+                  stroke="#facc15"
+                  strokeWidth={radarFullMap ? '2.2' : '1.5'}
+                  strokeDasharray="5 3"
+                />
+              );
+            })()}
             {telemetry.minimapActors.map((a, idx) => (
               <circle
                 key={idx}
@@ -851,10 +1029,18 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                     ? radarFullMap
                       ? 7.5
                       : 5.2
+                    : a.kind === 'drop_pin'
+                    ? radarFullMap
+                      ? 7.0
+                      : 5.0
                     : a.kind === 'player'
                     ? radarFullMap
                       ? 6.2
                       : 4.2
+                    : a.kind === 'shrine' || a.kind === 'turret'
+                    ? radarFullMap
+                      ? 5.2
+                      : 3.8
                     : a.kind === 'chest'
                     ? radarFullMap
                       ? 4.8
@@ -866,14 +1052,22 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 fill={
                   a.kind === 'player'
                     ? '#facc15'
+                    : a.kind === 'drop_pin'
+                    ? '#fef08a'
                     : a.kind === 'boss'
                     ? '#c084fc'
+                    : a.kind === 'shrine'
+                    ? '#2dd4bf'
+                    : a.kind === 'turret'
+                    ? '#38bdf8'
                     : a.kind === 'chest'
                     ? '#10b981'
                     : a.kind === 'remote'
                     ? '#38bdf8'
                     : '#ef4444'
                 }
+                stroke={a.kind === 'drop_pin' ? '#f97316' : 'none'}
+                strokeWidth={a.kind === 'drop_pin' ? '2.2' : '0'}
               />
             ))}
           </svg>
@@ -1029,6 +1223,47 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <button
             type="button"
             tabIndex={-1}
+            data-testid="btn-health-potion"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              onUseHealthPotion();
+            }}
+            className="px-2 py-1 rounded-lg border border-emerald-500/45 bg-[#0e1a13]/95 text-[11px] font-mono-num text-emerald-200 hover:border-emerald-300 transition-colors whitespace-nowrap"
+          >
+            🧪 HP [{telemetry.healthPotions ?? 2}] [Z]
+          </button>
+
+          <button
+            type="button"
+            tabIndex={-1}
+            data-testid="btn-shield-potion"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              onUseShieldPotionOrDisguise();
+            }}
+            className="px-2 py-1 rounded-lg border border-sky-500/45 bg-[#0c161e]/95 text-[11px] font-mono-num text-sky-200 hover:border-sky-300 transition-colors whitespace-nowrap"
+          >
+            {telemetry.isDownedScarab
+              ? `🏺 Disguise (${(telemetry.propDisguiseKind || 'none').toUpperCase()}) [X]`
+              : `🛡️ Shield [${telemetry.shieldPotions ?? 2}] [X]`}
+          </button>
+
+          <button
+            type="button"
+            tabIndex={-1}
+            data-testid="btn-shrine-prayer"
+            onClick={(e) => {
+              e.currentTarget.blur();
+              onTriggerPrayerOrDisassemble();
+            }}
+            className="px-2 py-1 rounded-lg border border-amber-400/55 bg-[#1b1309]/95 text-[11px] font-mono-num text-amber-200 hover:border-amber-300 transition-colors whitespace-nowrap"
+          >
+            ⛩️ {telemetry.nearbyShrineName ? 'Shrine Pray (25g)' : 'Blessing/Relic (45g)'} [F]
+          </button>
+
+          <button
+            type="button"
+            tabIndex={-1}
             onClick={(e) => {
               e.currentTarget.blur();
               onTriggerReload();
@@ -1051,7 +1286,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 : 'border-amber-500/35 bg-[#140e09]/95 text-amber-200 hover:text-amber-100 hover:border-amber-400'
             }`}
           >
-            ✦ Inspect Weapon [I]
+            ✦ Inspect [I]
           </button>
 
           <button

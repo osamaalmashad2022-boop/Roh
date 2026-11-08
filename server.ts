@@ -108,7 +108,16 @@ function collectDirectoryFiles(dirPath: string, zipPrefix: string, out: Array<{ 
 export interface RemotePlayerState {
   id: string;
   name: string;
-  heroClass: 'ranger' | 'ragnar' | 'bounty' | 'assassin' | 'mage' | 'warrior' | 'sniper';
+  heroClass:
+    | 'ranger'
+    | 'ragnar'
+    | 'bounty'
+    | 'assassin'
+    | 'mage'
+    | 'warrior'
+    | 'sniper'
+    | 'tesla'
+    | 'claudia';
   x: number;
   y: number;
   z: number;

@@ -1,4 +1,13 @@
-export type HeroClassId = 'ranger' | 'ragnar' | 'bounty' | 'assassin' | 'mage' | 'warrior' | 'sniper';
+export type HeroClassId =
+  | 'ranger'
+  | 'ragnar'
+  | 'bounty'
+  | 'assassin'
+  | 'mage'
+  | 'warrior'
+  | 'sniper'
+  | 'tesla'
+  | 'claudia';
 
 export type GameStateMode = 'title' | 'playing' | 'paused' | 'gameover';
 
@@ -721,6 +730,199 @@ export const HERO_CLASSES: Record<HeroClassId, HeroClassSpec> = {
       },
     },
   },
+
+  tesla: {
+    id: 'tesla',
+    shortLabel: 'TESLA',
+    name: 'TESLA · Electromancer',
+    canonicalHero: 'Tesla (Arc Engineer · مهندسة الأبراج الكهربائية)',
+    title: 'Deployable Lightning Turret & EMP Coil Tactician',
+    tagline:
+      'Wields Arc Coil Launcher [1] and EMP Pulse Cannon [2]. Deploys active 3D Lightning Turrets [Q] that auto-zap rivals, Magnetic Surge dash [E], Static Trap Field [C], and Superconductor Overload [R].',
+    maxHp: 130,
+    maxShield: 80,
+    baseSpeed: 10.5,
+    primaryWeapon: 'Arc Coil Launcher',
+    secondaryWeapon: 'EMP Pulse Cannon',
+    primaryRoleClue: 'Chain-Shock Arc Bolts & Auto-Turret Control',
+    weapons: {
+      1: {
+        slot: 1,
+        name: 'Arc Coil Launcher',
+        arabicName: 'قاذف القوس الكهربائي (Arc Coil Launcher)',
+        roleClue: 'High-Voltage Lightning Bolts · Stuns & Chains',
+        baseDamage: 36,
+        projectileSpeed: 74,
+        fireCooldown: 0.36,
+        burstCount: 1,
+        spreadAngle: 0,
+        projectileColor: 0x38bdf8,
+        appliesStun: true,
+      },
+      2: {
+        slot: 2,
+        name: 'EMP Pulse Cannon',
+        arabicName: 'مدفع النبض الكهرومغناطيسي (EMP Cannon)',
+        roleClue: 'Explosive Plasma Sphere · 4.6m Shield-Disrupting Blast',
+        baseDamage: 48,
+        projectileSpeed: 54,
+        fireCooldown: 0.56,
+        burstCount: 1,
+        spreadAngle: 0,
+        projectileColor: 0xfacc15,
+        explosiveRadius: 4.6,
+        appliesStun: true,
+      },
+    },
+    baseDamage: 36,
+    projectileSpeed: 74,
+    fireCooldown: 0.36,
+    canScope: true,
+    accentColor: '#38bdf8',
+    secondaryColor: '#facc15',
+    abilities: {
+      q: {
+        id: 'q',
+        keyLabel: 'Q',
+        name: 'Lightning Turret',
+        arabicName: 'برج الصواعق الآلي (Lightning Turret)',
+        roleClue: 'Deploys 3D Auto-Firing Tesla Turret (14s) + +45 Shield',
+        cooldown: 9.5,
+        duration: 14.0,
+      },
+      e: {
+        id: 'e',
+        keyLabel: 'E',
+        name: 'Magnetic Surge',
+        arabicName: 'الاندفاع المغناطيسي (Magnetic Surge)',
+        roleClue: 'High-Speed Electro-Dash + Restores +40 HP & Shock Nova',
+        cooldown: 6.5,
+        duration: 3.5,
+      },
+      c: {
+        id: 'c',
+        keyLabel: 'C',
+        name: 'Static Trap Field',
+        arabicName: 'حقل الشلل الكهرومغناطيسي (Static Trap)',
+        roleClue: 'Deploys Magnetic Snare Coil that Paralyzes Rivals',
+        cooldown: 9.0,
+        duration: 5.5,
+      },
+      r: {
+        id: 'r',
+        keyLabel: 'R',
+        name: 'Superconductor Overload',
+        arabicName: 'فرط الشحن الكهرومغناطيسي (Overload)',
+        roleClue: 'Calls Down Chain Lightning Storm (62 DMG) + Overdrives Turret!',
+        cooldown: 11.5,
+        duration: 5.0,
+      },
+      v: {
+        id: 'v',
+        keyLabel: 'V',
+        name: 'Desert Raptor Mount',
+        arabicName: 'استدعاء المطية (Ride Out Mount)',
+        roleClue: 'Summon Dinosaur Courser · +60% Sprint Speed',
+        cooldown: 2.0,
+      },
+    },
+  },
+
+  claudia: {
+    id: 'claudia',
+    shortLabel: 'CLAUDIA',
+    name: 'CLAUDIA · Frost Weaver',
+    canonicalHero: 'Claudia (Glacial Archmage · ساحرة الصقيع الأبدي)',
+    title: 'Cryo-Crystal Barrier & Absolute Zero Blizzard Mage',
+    tagline:
+      'Wields Glacial Scepter [1] and 3-shard Frostbite Volley [2]. Encases herself in an Invulnerable Ice Block [Q], blinks with Glacial Shift [E], deploys Permafrost Nova [C], and unleashes Absolute Zero Blizzard [R].',
+    maxHp: 125,
+    maxShield: 85,
+    baseSpeed: 10.4,
+    primaryWeapon: 'Glacial Scepter',
+    secondaryWeapon: 'Frostbite Shards',
+    primaryRoleClue: 'Cryo-Freeze Lance · Chills & Shatters Armor',
+    weapons: {
+      1: {
+        slot: 1,
+        name: 'Glacial Scepter',
+        arabicName: 'صولجان الصقيع القطبي (Glacial Scepter)',
+        roleClue: 'Piercing Ice Lance · Freezes & Slows Target',
+        baseDamage: 38,
+        projectileSpeed: 72,
+        fireCooldown: 0.38,
+        burstCount: 1,
+        spreadAngle: 0,
+        projectileColor: 0x67e8f9,
+        appliesStun: true,
+      },
+      2: {
+        slot: 2,
+        name: 'Frostbite Shards',
+        arabicName: 'شظايا الجليد الثلاثية (Frostbite Shards)',
+        roleClue: '3-Shard Cryo Volley · Wide Shatter Spread',
+        baseDamage: 18,
+        projectileSpeed: 64,
+        fireCooldown: 0.29,
+        burstCount: 3,
+        spreadAngle: 0.048,
+        projectileColor: 0x38bdf8,
+        appliesStun: true,
+      },
+    },
+    baseDamage: 38,
+    projectileSpeed: 72,
+    fireCooldown: 0.38,
+    canScope: true,
+    accentColor: '#67e8f9',
+    secondaryColor: '#38bdf8',
+    abilities: {
+      q: {
+        id: 'q',
+        keyLabel: 'Q',
+        name: 'Ice Block Sanctuary',
+        arabicName: 'درع الكريستال الجليدي (Ice Block)',
+        roleClue: 'Crystal Ice Barrier (+65 HP & +65 Shield + 70% DMG Reduction)',
+        cooldown: 9.5,
+        duration: 4.5,
+      },
+      e: {
+        id: 'e',
+        keyLabel: 'E',
+        name: 'Glacial Blink',
+        arabicName: 'الوميض الجليدي الخاطف (Glacial Blink)',
+        roleClue: 'Teleports 9m Forward + Freezes Rivals at Origin',
+        cooldown: 6.5,
+        duration: 0.5,
+      },
+      c: {
+        id: 'c',
+        keyLabel: 'C',
+        name: 'Permafrost Nova',
+        arabicName: 'فخ الصقيع الأبدي (Permafrost Nova)',
+        roleClue: 'Erupts Sub-Zero Cryo Ring that Roots & Chills Enemies',
+        cooldown: 9.0,
+        duration: 5.5,
+      },
+      r: {
+        id: 'r',
+        keyLabel: 'R',
+        name: 'Absolute Zero Blizzard',
+        arabicName: 'عاصفة الصفر المطلق الجليدية (Blizzard)',
+        roleClue: 'Unleashes Arctic Blizzard Freezing & Damaging All Nearby Rivals (64 DMG)',
+        cooldown: 11.5,
+        duration: 5.0,
+      },
+      v: {
+        id: 'v',
+        keyLabel: 'V',
+        name: 'Desert Raptor Mount',
+        arabicName: 'استدعاء المطية (Ride Out Mount)',
+        roleClue: 'Summon Dinosaur Courser · +60% Sprint Speed',
+        cooldown: 2.0,
+      },
+    },
+  },
 };
 
 export interface ArenaPlatform {
@@ -903,7 +1105,8 @@ export interface ScarabRelicState {
 
 export function applyDamageWithScarabRelic(
   state: ScarabRelicState,
-  incomingDamage: number
+  incomingDamage: number,
+  hasAnkhRelic = false
 ): {
   nextState: ScarabRelicState;
   enteredScarab: boolean;
@@ -930,12 +1133,13 @@ export function applyDamageWithScarabRelic(
 
   if (next.hp <= 0) {
     if (next.relicReady) {
+      const revivalSecs = hasAnkhRelic ? 8.5 : 12.0;
       next.isDownedScarab = true;
       next.relicReady = false;
       next.relicCooldown = 42;
-      next.scarabMaxDuration = 6.0;
-      next.scarabTimer = 6.0;
-      next.hp = 70;
+      next.scarabMaxDuration = revivalSecs;
+      next.scarabTimer = revivalSecs;
+      next.hp = hasAnkhRelic ? 95 : 75;
       next.shield = 0;
       return { nextState: next, enteredScarab: true, eliminated: false };
     }
@@ -1487,9 +1691,10 @@ export function computeSolarStormState(matchTimeSec: number): SolarStormState {
   };
 }
 
-export function computeBattleRoyaleRank(aliveRivalsCount: number, playerEliminated: boolean): number {
+export function computeBattleRoyaleRank(aliveRivalsCount: number, _playerEliminated: boolean): number {
   const clampedRivals = Math.max(0, Math.min(TOTAL_BR_COMBATANTS - 1, aliveRivalsCount));
-  return playerEliminated ? clampedRivals + 1 : clampedRivals + 1;
+  // Whether currently alive among N rivals or just eliminated with N rivals standing, placement is N + 1
+  return clampedRivals + 1;
 }
 
 /**
@@ -1623,18 +1828,30 @@ export interface GeneratedRivalTemplate {
 }
 
 export function generate100PlayerRoster(): GeneratedRivalTemplate[] {
-  const classIds: HeroClassId[] = ['ranger', 'ragnar', 'bounty', 'assassin', 'mage', 'warrior', 'sniper'];
+  const classIds: HeroClassId[] = [
+    'ranger',
+    'ragnar',
+    'bounty',
+    'assassin',
+    'mage',
+    'warrior',
+    'sniper',
+    'tesla',
+    'claudia',
+  ];
   const policies: EnemyPolicyType[] = ['kiter_sniper', 'charger_vanguard', 'orbiter_assassin', 'area_weaver'];
   const roster: GeneratedRivalTemplate[] = [];
 
-  // First 6 iconic named champions near the inner-mid ring so the player sees immediate high-detail action
+  // First 8 iconic named champions near the inner-mid ring so the player sees immediate high-detail action
   const featured: Array<{ name: string; heroClass: HeroClassId; policy: EnemyPolicyType; x: number; z: number }> = [
     { name: 'Ragnar · Ghost Captain', heroClass: 'ragnar', policy: 'charger_vanguard', x: -16, z: -14 },
-    { name: 'White · Bounty Hunter', heroClass: 'bounty', policy: 'kiter_sniper', x: 18, z: -15 },
-    { name: 'Atlas · Raging King', heroClass: 'warrior', policy: 'charger_vanguard', x: -19, z: 12 },
+    { name: 'Tesla · Electromancer', heroClass: 'tesla', policy: 'area_weaver', x: 18, z: -15 },
+    { name: 'Claudia · Frost Weaver', heroClass: 'claudia', policy: 'kiter_sniper', x: -19, z: 12 },
     { name: 'Hasan-e · Assassin', heroClass: 'assassin', policy: 'orbiter_assassin', x: 19, z: 13 },
     { name: 'Lilith · Dark Succubus', heroClass: 'mage', policy: 'area_weaver', x: -26, z: -4 },
     { name: 'Chiyo · Ghost Huntress', heroClass: 'sniper', policy: 'kiter_sniper', x: 26, z: -3 },
+    { name: 'White · Bounty Hunter', heroClass: 'bounty', policy: 'kiter_sniper', x: 0, z: -24 },
+    { name: 'Atlas · Raging King', heroClass: 'warrior', policy: 'charger_vanguard', x: -22, z: 22 },
   ];
 
   for (let i = 0; i < TOTAL_BR_COMBATANTS - 1; i++) {
@@ -1656,7 +1873,7 @@ export function generate100PlayerRoster(): GeneratedRivalTemplate[] {
     const callsign = EGYPTIAN_CALLSIGNS[i % EGYPTIAN_CALLSIGNS.length];
     const shortCls = HERO_CLASSES[heroClass].shortLabel;
 
-    // Distribute remaining 93 combatants across 4 concentric tactical rings (28m to 118m) using golden angle
+    // Distribute remaining combatants across 4 concentric tactical rings (28m to 118m) using golden angle
     const idxInOuter = i - featured.length;
     const goldenAngle = idxInOuter * 2.399963229728653;
     const ringTier = idxInOuter % 4; // 0: 30-48m, 1: 50-72m, 2: 74-96m, 3: 98-118m
@@ -1681,5 +1898,327 @@ export function generate100PlayerRoster(): GeneratedRivalTemplate[] {
 
   return roster;
 }
+
+// ============================================================================
+// RIDE OUT HEROES PARITY SYSTEMS: 6-SLOT RELICS, SANCTUARY SHRINES,
+// 4-TIER ARMOR PROGRESSION, POTION POUCH & MULTI-PROP DISGUISE
+// ============================================================================
+
+export type RelicId =
+  | 'sacred_ibis'
+  | 'ouroboros_ring'
+  | 'horus_eye'
+  | 'ankh_rebirth'
+  | 'maat_feather'
+  | 'scarab_signet';
+
+export interface RelicSpec {
+  id: RelicId;
+  name: string;
+  arabicName: string;
+  description: string;
+  color: string;
+  shortTag: string;
+}
+
+export const RELIC_CATALOG: Record<RelicId, RelicSpec> = {
+  sacred_ibis: {
+    id: 'sacred_ibis',
+    name: 'Feather of Thoth',
+    arabicName: 'ريشة تحوت المقدسة (+12% سرعة)',
+    description: '+12% Movement & Mount Sprint Speed',
+    color: '#38bdf8',
+    shortTag: '+12% SPD',
+  },
+  ouroboros_ring: {
+    id: 'ouroboros_ring',
+    name: 'Ouroboros Chrono-Ring',
+    arabicName: 'خاتم أوروبوروس (-18% تهدئة المهارات)',
+    description: '-18% Ability Cooldowns ([Q]/[E]/[C]/[R])',
+    color: '#a855f7',
+    shortTag: '-18% CD',
+  },
+  horus_eye: {
+    id: 'horus_eye',
+    name: 'Solar Eye of Horus',
+    arabicName: 'عين حورس الشمسية (+16% ضرر حرج)',
+    description: '+16% Weapon & Headshot Damage',
+    color: '#facc15',
+    shortTag: '+16% DMG',
+  },
+  ankh_rebirth: {
+    id: 'ankh_rebirth',
+    name: 'Golden Ankh of Rebirth',
+    arabicName: 'مفتاح الحياة الذهبي (بعث أسرع 8.5ث)',
+    description: 'Reduces Baby Dragon Revival Timer from 12s to 8.5s + +30 Max HP',
+    color: '#10b981',
+    shortTag: '8.5s REVIVE',
+  },
+  maat_feather: {
+    id: 'maat_feather',
+    name: 'Aegis of Maat',
+    arabicName: 'درع ماعت السماوي (+35 درع وتجدد)',
+    description: '+35 Max Shield & Passive Shield Regen (+4/s)',
+    color: '#22d3ee',
+    shortTag: '+35 SHD',
+  },
+  scarab_signet: {
+    id: 'scarab_signet',
+    name: 'Pharaoh Scarab Signet',
+    arabicName: 'ختم الجعران الملكي (امتصاص حياة +15%)',
+    description: 'Heals +15% of Weapon Damage Dealt + +25% Gold Loot',
+    color: '#f97316',
+    shortTag: '+15% LEECH',
+  },
+};
+
+export const ALL_RELIC_IDS: RelicId[] = [
+  'sacred_ibis',
+  'ouroboros_ring',
+  'horus_eye',
+  'ankh_rebirth',
+  'maat_feather',
+  'scarab_signet',
+];
+
+export interface RelicBonuses {
+  speedMultiplier: number;
+  cooldownMultiplier: number;
+  damageMultiplier: number;
+  bonusMaxHp: number;
+  bonusMaxShield: number;
+  shieldRegenPerSec: number;
+  lifestealRatio: number;
+  hasAnkhFastRevive: boolean;
+}
+
+export function computeRelicBonuses(relics: RelicId[]): RelicBonuses {
+  const unique = new Set(relics);
+  return {
+    speedMultiplier: unique.has('sacred_ibis') ? 1.12 : 1.0,
+    cooldownMultiplier: unique.has('ouroboros_ring') ? 0.82 : 1.0,
+    damageMultiplier: unique.has('horus_eye') ? 1.16 : 1.0,
+    bonusMaxHp: unique.has('ankh_rebirth') ? 30 : 0,
+    bonusMaxShield: unique.has('maat_feather') ? 35 : 0,
+    shieldRegenPerSec: unique.has('maat_feather') ? 4.0 : 0,
+    lifestealRatio: unique.has('scarab_signet') ? 0.15 : 0,
+    hasAnkhFastRevive: unique.has('ankh_rebirth'),
+  };
+}
+
+export type ArmorTier = 1 | 2 | 3 | 4;
+
+export interface ArmorTierSpec {
+  tier: ArmorTier;
+  name: string;
+  arabicName: string;
+  damageReductionRatio: number;
+  bonusMaxShield: number;
+  color: string;
+}
+
+export const ARMOR_TIER_SPECS: Record<ArmorTier, ArmorTierSpec> = {
+  1: {
+    tier: 1,
+    name: 'Common Linen Cuirass',
+    arabicName: 'درع عادي (Common Lv1)',
+    damageReductionRatio: 0.05,
+    bonusMaxShield: 0,
+    color: '#94a3b8',
+  },
+  2: {
+    tier: 2,
+    name: 'Rare Turquoise Plate',
+    arabicName: 'درع نادر (Rare Lv2)',
+    damageReductionRatio: 0.12,
+    bonusMaxShield: 25,
+    color: '#38bdf8',
+  },
+  3: {
+    tier: 3,
+    name: 'Epic Amethyst Scales',
+    arabicName: 'درع ملحمي (Epic Lv3)',
+    damageReductionRatio: 0.2,
+    bonusMaxShield: 55,
+    color: '#c084fc',
+  },
+  4: {
+    tier: 4,
+    name: 'Legendary Pharaoh Gold',
+    arabicName: 'درع فرعوني أسطوري (Legendary Lv4)',
+    damageReductionRatio: 0.28,
+    bonusMaxShield: 90,
+    color: '#facc15',
+  },
+};
+
+export function computeArmorMitigatedDamage(rawDamage: number, armorTier: ArmorTier): number {
+  const spec = ARMOR_TIER_SPECS[armorTier] || ARMOR_TIER_SPECS[1];
+  return Math.max(1, Math.round(rawDamage * (1 - spec.damageReductionRatio)));
+}
+
+export interface SanctuaryShrineSpec {
+  id: string;
+  name: string;
+  arabicName: string;
+  x: number;
+  z: number;
+  colorHex: number;
+}
+
+export const SANCTUARY_SHRINES: SanctuaryShrineSpec[] = [
+  {
+    id: 'shrine-north',
+    name: 'North Shrine of Horus',
+    arabicName: 'مزار حورس الشمالي',
+    x: 0,
+    z: -36,
+    colorHex: 0x10b981,
+  },
+  {
+    id: 'shrine-east',
+    name: 'East Shrine of Ra',
+    arabicName: 'مزار رع الشرقي',
+    x: 36,
+    z: 0,
+    colorHex: 0xfacc15,
+  },
+  {
+    id: 'shrine-south',
+    name: 'South Shrine of Isis',
+    arabicName: 'مزار إيزيس الجنوبي',
+    x: 0,
+    z: 36,
+    colorHex: 0x38bdf8,
+  },
+  {
+    id: 'shrine-west',
+    name: 'West Shrine of Anubis',
+    arabicName: 'مزار أنوبيس الغربي',
+    x: -36,
+    z: 0,
+    colorHex: 0xa855f7,
+  },
+];
+
+export type ScarabPropKind = 'none' | 'amphora' | 'boulder' | 'obelisk';
+
+export function cycleScarabPropDisguise(current: ScarabPropKind): ScarabPropKind {
+  switch (current) {
+    case 'none':
+      return 'amphora';
+    case 'amphora':
+      return 'boulder';
+    case 'boulder':
+      return 'obelisk';
+    case 'obelisk':
+      return 'none';
+  }
+}
+
+/**
+ * Determines whether an AI Rival can detect the player while the player is downed
+ * in Baby Dragon / Scarab form and disguised as an environmental prop.
+ * Disguised players reduce rival detection range from 24m down to 3.5m!
+ */
+export function canRivalDetectDisguisedPlayer(
+  distToPlayer: number,
+  isDownedScarab: boolean,
+  propDisguise: ScarabPropKind
+): boolean {
+  if (!isDownedScarab || propDisguise === 'none') {
+    return distToPlayer <= 28.0;
+  }
+  return distToPlayer <= 3.5;
+}
+
+/**
+ * Returns the human-readable uppercase label for the active Scarab Prop Disguise kind.
+ */
+export function formatPropDisguiseLabel(kind: ScarabPropKind): string {
+  switch (kind) {
+    case 'amphora':
+      return 'AMPHORA URN';
+    case 'boulder':
+      return 'SANDSTONE BOULDER';
+    case 'obelisk':
+      return 'MINI-OBELISK';
+    default:
+      return 'NONE';
+  }
+}
+
+/**
+ * Computes effective player maxHp, maxShield, and armor damageReductionRatio
+ * combining the HeroClass base stats, 4-Tier Armor progression, and 6-Slot Relics.
+ * Used on match start, chest opening, shrine prayer, sandbox max forge, and mid-match class switch.
+ */
+export function computeEffectivePlayerVitals(
+  heroClass: HeroClassId,
+  armorTier: ArmorTier,
+  relics: RelicId[]
+): {
+  maxHp: number;
+  maxShield: number;
+  damageReductionRatio: number;
+} {
+  const baseSpec = HERO_CLASSES[heroClass] || HERO_CLASSES.ranger;
+  const armorSpec = ARMOR_TIER_SPECS[armorTier] || ARMOR_TIER_SPECS[1];
+  const relicBonuses = computeRelicBonuses(relics);
+  return {
+    maxHp: baseSpec.maxHp + relicBonuses.bonusMaxHp,
+    maxShield: baseSpec.maxShield + armorSpec.bonusMaxShield + relicBonuses.bonusMaxShield,
+    damageReductionRatio: armorSpec.damageReductionRatio,
+  };
+}
+
+/**
+ * Evaluates tactical AI Rival armor tier progression (Lv1..Lv4 based on storm phase & kills)
+ * and emergency healing potion usage (+45 HP when HP drops below 42% with an 18s cooldown).
+ */
+export function evaluateRivalTacticalUpgradeAndHeal(params: {
+  currentHp: number;
+  maxHp: number;
+  currentArmorTier: ArmorTier;
+  stormPhase: number;
+  kills: number;
+  potionCooldownSec: number;
+}): {
+  nextHp: number;
+  nextArmorTier: ArmorTier;
+  nextPotionCooldownSec: number;
+  usedPotion: boolean;
+  upgradedArmor: boolean;
+} {
+  const targetTierNum = Math.max(
+    params.currentArmorTier,
+    Math.min(4, Math.max(1, Math.min(3, params.stormPhase) + (params.kills >= 2 ? 1 : 0)))
+  ) as ArmorTier;
+
+  const upgradedArmor = targetTierNum > params.currentArmorTier;
+  let nextHp = params.currentHp;
+  let nextPotionCooldownSec = Math.max(0, params.potionCooldownSec);
+  let usedPotion = false;
+
+  if (
+    params.currentHp > 0 &&
+    params.currentHp <= params.maxHp * 0.42 &&
+    nextPotionCooldownSec <= 0
+  ) {
+    nextHp = Math.min(params.maxHp, params.currentHp + 45);
+    nextPotionCooldownSec = 18.0;
+    usedPotion = true;
+  }
+
+  return {
+    nextHp,
+    nextArmorTier: targetTierNum,
+    nextPotionCooldownSec,
+    usedPotion,
+    upgradedArmor,
+  };
+}
+
+
 
 

@@ -134,12 +134,12 @@ export const TitleAndModals: React.FC<TitleAndModalsProps> = ({
               and <strong className="text-amber-200 font-semibold">5 Class Skills ([Q], [E], [C], [R], [V])</strong>.
             </p>
 
-            {/* 7 Canonical Ride Out Heroes Class Roster */}
+            {/* 9 Canonical Ride Out Heroes Class Roster */}
             <div className="mb-3">
               <div className="text-xs font-mono-num uppercase tracking-wider text-amber-400/90 mb-1.5">
-                SELECT RIDE OUT HERO CLASS (7 CANONICAL CLASSES · 100-PLAYER ROYALE) · ACTIVE: {currentSpec.shortLabel}
+                SELECT RIDE OUT HERO CLASS (9 CANONICAL CLASSES · 100-PLAYER ROYALE) · ACTIVE: {currentSpec.shortLabel}
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                 {(Object.keys(HERO_CLASSES) as HeroClassId[]).map((cid) => {
                   const c = HERO_CLASSES[cid];
                   const active = heroClass === cid;
@@ -149,7 +149,7 @@ export const TitleAndModals: React.FC<TitleAndModalsProps> = ({
                       type="button"
                       data-hero-class={cid}
                       onClick={() => onSelectClass(cid)}
-                      className={`px-2.5 py-2 rounded-lg border text-left transition-all cursor-pointer ${
+                      className={`px-2.5 py-1.5 rounded-lg border text-left transition-all cursor-pointer ${
                         active
                           ? 'bg-amber-500/20 border-amber-400 text-amber-100 shadow-md'
                           : 'bg-[#16100a]/90 border-amber-500/25 text-amber-200/75 hover:border-amber-500/60 hover:text-amber-100'
@@ -157,7 +157,7 @@ export const TitleAndModals: React.FC<TitleAndModalsProps> = ({
                     >
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-xs font-bold whitespace-nowrap truncate">{c.name}</span>
-                        {cid === 'ragnar' && (
+                        {(cid === 'tesla' || cid === 'claudia' || cid === 'ragnar') && (
                           <span className="px-1 py-0.5 rounded bg-teal-500/30 border border-teal-400/70 text-[9px] font-mono-num text-teal-200">
                             NEW
                           </span>
@@ -339,7 +339,7 @@ export const TitleAndModals: React.FC<TitleAndModalsProps> = ({
 
         {/* Single Flat Borderless Inline Control Hint Line in Bottom Safe Margin */}
         <div className="text-xs font-mono-num text-amber-200/80 tracking-wide">
-          WASD Move · Mouse/Arrows Aim · 1/2/Tab Swap Weapons · I Inspect · Y Reload · Q / E / C / R Class Skills · G Forge · B Boss · V Mount
+          WASD Move · Space Sky-Dive/Jump · 1/2 Swap Weapons · Q / E / C / R Class Skills · Z/X Potions & Disguise · F Shrine Prayer/Relics · G Forge · V Mount
         </div>
       </div>
     );

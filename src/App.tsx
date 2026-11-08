@@ -117,7 +117,9 @@ export default function App() {
         raw === 'assassin' ||
         raw === 'mage' ||
         raw === 'warrior' ||
-        raw === 'sniper'
+        raw === 'sniper' ||
+        raw === 'tesla' ||
+        raw === 'claudia'
       ) {
         return raw;
       }
@@ -248,6 +250,11 @@ export default function App() {
           onTriggerReload={() => actionsRef.current?.triggerReload()}
           onTriggerInspect={() => actionsRef.current?.triggerInspect()}
           onTriggerForge={() => actionsRef.current?.triggerForge()}
+          onUseHealthPotion={() => actionsRef.current?.useHealthPotion()}
+          onUseShieldPotionOrDisguise={() => actionsRef.current?.useShieldPotionOrDisguise()}
+          onTriggerPrayerOrDisassemble={() => actionsRef.current?.triggerPrayerOrDisassemble()}
+          onTriggerDiveNow={() => actionsRef.current?.triggerDiveNow()}
+          onSelectSkyDropPin={(x, z) => actionsRef.current?.setSkyDropPin(x, z)}
           onToggleScope={() => actionsRef.current?.toggleScope()}
           onFireQuickShot={() => actionsRef.current?.fireQuickShot()}
           onRequestMouseLock={() => actionsRef.current?.requestMouseLock()}

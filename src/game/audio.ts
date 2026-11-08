@@ -199,6 +199,36 @@ class ArenaAudioEngine {
       return;
     }
 
+    if (heroClass === 'tesla') {
+      // Slot 1: Arc Coil Launcher | Slot 2: EMP Pulse Cannon
+      const zap = ctx.createOscillator();
+      const gain = ctx.createGain();
+      zap.type = slot === 1 ? 'sawtooth' : 'square';
+      zap.frequency.setValueAtTime(this.pitchJitter(slot === 1 ? 1320 : 480), now);
+      zap.frequency.exponentialRampToValueAtTime(slot === 1 ? 240 : 68, now + (slot === 1 ? 0.16 : 0.28));
+      gain.gain.setValueAtTime(slot === 1 ? 0.15 : 0.21, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + (slot === 1 ? 0.18 : 0.3));
+      zap.connect(gain).connect(ctx.destination);
+      zap.start(now);
+      zap.stop(now + (slot === 1 ? 0.18 : 0.3));
+      return;
+    }
+
+    if (heroClass === 'claudia') {
+      // Slot 1: Glacial Scepter | Slot 2: Frostbite Shards
+      const chime = ctx.createOscillator();
+      const gain = ctx.createGain();
+      chime.type = 'triangle';
+      chime.frequency.setValueAtTime(this.pitchJitter(slot === 1 ? 1480 : 1760), now);
+      chime.frequency.exponentialRampToValueAtTime(slot === 1 ? 520 : 680, now + 0.18);
+      gain.gain.setValueAtTime(0.14, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+      chime.connect(gain).connect(ctx.destination);
+      chime.start(now);
+      chime.stop(now + 0.2);
+      return;
+    }
+
     // Sniper Chiyo — Slot 1: Phantom Longrifle | Slot 2: Psychic Kunai
     const rail = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -384,7 +414,49 @@ class ArenaAudioEngine {
     osc.start(now);
     osc.stop(now + 0.24);
   }
+
+  public playPotionDrink(isShield: boolean) {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const notes = isShield ? [523.25, 659.25, 987.77] : [440, 587.33, 880];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      const t0 = now + idx * 0.045;
+      osc.frequency.setValueAtTime(this.pitchJitter(freq, 0.02), t0);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.18, t0 + 0.18);
+      gain.gain.setValueAtTime(0.11, t0);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.2);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.21);
+    });
+  }
+
+  public playRelicOrShrineChime(isLegendaryArmor = false) {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const notes = isLegendaryArmor
+      ? [523.25, 659.25, 783.99, 1046.5, 1567.98]
+      : [587.33, 739.99, 880, 1174.66];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = isLegendaryArmor ? 'triangle' : 'sine';
+      const t0 = now + idx * 0.05;
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(isLegendaryArmor ? 0.14 : 0.11, t0);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.36);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.38);
+    });
+  }
 }
 
 export const audioEngine = new ArenaAudioEngine();
+
 

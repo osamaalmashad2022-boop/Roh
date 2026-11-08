@@ -30,6 +30,20 @@ import {
   checkProjectile3DHit,
   selectBoundedAoETargets,
   generate100PlayerRoster,
+  RelicId,
+  ALL_RELIC_IDS,
+  RELIC_CATALOG,
+  computeRelicBonuses,
+  ArmorTier,
+  ARMOR_TIER_SPECS,
+  computeArmorMitigatedDamage,
+  SANCTUARY_SHRINES,
+  ScarabPropKind,
+  cycleScarabPropDisguise,
+  canRivalDetectDisguisedPlayer,
+  formatPropDisguiseLabel,
+  computeEffectivePlayerVitals,
+  evaluateRivalTacticalUpgradeAndHeal,
 } from '../game/rules';
 import {
   CharacterRig,
@@ -49,6 +63,7 @@ import {
   createGoldenLootChestRig,
   decoratePharaohBossRig,
   createInstancedCombatantCrowd,
+  createTeslaTurretRig,
 } from '../game/models';
 import {
   EngineDiagnosticsSnapshot,
@@ -83,6 +98,12 @@ export interface DirectionalHitArcHUDItem {
   id: number;
   angleDeg: number;
   opacity: number;
+}
+
+export interface LootFeedHUDItem {
+  id: number;
+  text: string;
+  color: string;
 }
 
 export interface BattleRoyaleContenderHUD {
@@ -133,8 +154,30 @@ export interface LiveHUDTelemetry {
   minimapActors: Array<{
     x: number;
     z: number;
-    kind: 'player' | 'rival' | 'remote' | 'perch' | 'boss' | 'chest';
+    kind:
+      | 'player'
+      | 'rival'
+      | 'remote'
+      | 'perch'
+      | 'boss'
+      | 'chest'
+      | 'shrine'
+      | 'turret'
+      | 'drop_pin';
   }>;
+  goldCoins?: number;
+  armorTier?: ArmorTier;
+  healthPotions?: number;
+  shieldPotions?: number;
+  relics?: RelicId[];
+  isGliding?: boolean;
+  glidingAltitude?: number;
+  skyDropPin?: { x: number; z: number; active: boolean };
+  propDisguiseKind?: ScarabPropKind;
+  teslaTurretActive?: boolean;
+  teslaTurretRemaining?: number;
+  nearbyShrineName?: string | null;
+  lootFeed?: LootFeedHUDItem[];
   floatingDamages?: FloatingDamageHUDItem[];
   hitArcs?: DirectionalHitArcHUDItem[];
   killstreak?: {
@@ -219,6 +262,11 @@ export interface ArenaControlActions {
   setShowroomWeapon: (slot: WeaponSlotId) => void;
   setShowroomForge: (level: number) => void;
   triggerShowroomPose: () => void;
+  useHealthPotion: () => void;
+  useShieldPotionOrDisguise: () => void;
+  triggerPrayerOrDisassemble: () => void;
+  triggerDiveNow: () => void;
+  setSkyDropPin: (x: number, z: number) => void;
 }
 
 interface ArenaCanvasProps {
@@ -277,6 +325,8 @@ interface RivalActor {
   rotY: number;
   hp: number;
   maxHp: number;
+  armorTier: ArmorTier;
+  aiPotionCooldown: number;
   speed: number;
   strafeSign: number;
   attackCooldown: number;
@@ -450,6 +500,10 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
     const snareVisual = createMultiClassTrapGroup();
     const snareGroup = snareVisual.group;
     scene.add(snareGroup);
+
+    // Tesla's Deployable 3D Lightning Turret ([Q])
+    const teslaTurretRig = createTeslaTurretRig();
+    scene.add(teslaTurretRig.group);
 
     const grappleLineGeo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, 1.5, 0),
@@ -746,6 +800,8 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       'mage',
       'warrior',
       'sniper',
+      'tesla',
+      'claudia',
     ];
     const nearRigPool: Array<{ heroClass: HeroClassId; rig: CharacterRig; inUse: boolean }> = [];
     for (const cls of ALL_CLASSES) {
@@ -779,6 +835,8 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         rotY: Math.atan2(-tpl.spawnX, -tpl.spawnZ),
         hp: rivalMaxHp,
         maxHp: rivalMaxHp,
+        armorTier: 1 as ArmorTier,
+        aiPotionCooldown: 6.0 + (idx % 5) * 2.0,
         speed: clsSpec.baseSpeed * 0.72,
         strafeSign: idx % 2 === 0 ? 1 : -1,
         attackCooldown: 2.2 + (idx % 6) * 0.55,
@@ -818,6 +876,8 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       rotY: 0,
       hp: 340,
       maxHp: 340,
+      armorTier: 4,
+      aiPotionCooldown: 999,
       speed: 8.6,
       strafeSign: 1,
       attackCooldown: 2.2,
@@ -974,10 +1034,25 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       isMounted: false,
       isDownedScarab: false,
       isPropDisguised: false,
+      propDisguiseKind: 'none' as ScarabPropKind,
       scarabTimer: 0,
-      scarabMaxDuration: 6.0,
+      scarabMaxDuration: 12.0,
       relicReady: true,
       relicCooldown: 0,
+      goldCoins: 60,
+      armorTier: 1 as ArmorTier,
+      healthPotions: 2,
+      shieldPotions: 2,
+      relics: [] as RelicId[],
+      isGliding: false,
+      skyDropPin: { x: 0, z: -36, active: false },
+      lootFeed: [] as LootFeedHUDItem[],
+      turretActive: false,
+      turretTimer: 0,
+      turretFireCooldown: 0,
+      turretX: 0,
+      turretY: 0,
+      turretZ: 0,
       dashTimer: 0,
       dashSpeed: 22.0,
       dashRamDamage: 0,
@@ -991,7 +1066,9 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         | 'whirl_dance'
         | 'waters_curse'
         | 'bulwark_shield'
-        | 'corsair_surge',
+        | 'corsair_surge'
+        | 'magnetic_surge'
+        | 'ice_block',
       wingsTimer: 0,
       grappleActive: false,
       grappleTimer: 0,
@@ -1055,9 +1132,41 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
     let aiEliminationCooldown = 4.0;
     let frameTickCounter = 0;
     let smoothedCamDist = 7.8;
+    let lootFeedSeq = 1;
     const spatialGrid = new ArenaSpatialHashGrid();
     const spatialQueryScratch: number[] = [];
     const inputBuffer = new CombatInputBuffer();
+
+    function pushLootFeed(text: string, color = '#facc15') {
+      player.lootFeed = [
+        ...player.lootFeed.slice(-3),
+        { id: lootFeedSeq++, text, color },
+      ];
+    }
+
+    function forEachRivalInRadius(
+      cx: number,
+      cz: number,
+      radius: number,
+      cb: (r: RivalActor) => void
+    ) {
+      if (spatialGrid.activeCellCount > 0) {
+        const candIndices = spatialGrid.queryRadius(cx, cz, radius, spatialQueryScratch);
+        for (let i = 0; i < candIndices.length; i++) {
+          const r = rivals[candIndices[i]];
+          if (r && r.koTimer === 0 && !r.eliminated && Math.hypot(r.x - cx, r.z - cz) <= radius) {
+            cb(r);
+          }
+        }
+        return;
+      }
+      for (let i = 0; i < rivals.length; i++) {
+        const r = rivals[i];
+        if (r.koTimer === 0 && !r.eliminated && Math.hypot(r.x - cx, r.z - cz) <= radius) {
+          cb(r);
+        }
+      }
+    }
 
     function awakenPharaohBoss() {
       if (bossActor.koTimer === 0) return;
@@ -1165,11 +1274,15 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       attackerZ = 0
     ) {
       if (player.endingTriggered || player.dashTimer > 0) return;
-      // Ragnar's [Q] Sea Ward · Bulwark Shield reduces incoming damage by 60%!
-      const effectiveDamage =
-        player.auraTimer > 0 && player.auraType === 'bulwark_shield'
-          ? Math.max(1, Math.round(damage * 0.4))
+      // Ragnar's [Q] Sea Ward & Claudia's [Q] Ice Block reduce incoming damage!
+      const shieldAuraMitigated =
+        player.auraTimer > 0 && player.auraType === 'ice_block'
+          ? Math.max(1, Math.round(damage * 0.15))
+          : player.auraTimer > 0 && player.auraType === 'bulwark_shield'
+          ? Math.max(1, Math.round(damage * 0.35))
           : damage;
+      const effectiveDamage = computeArmorMitigatedDamage(shieldAuraMitigated, player.armorTier);
+      const relicBonuses = computeRelicBonuses(player.relics);
       audioEngine.playPlayerHurt();
       player.hitFlashTimer = 0.08;
       cameraTrauma = Math.min(1, cameraTrauma + (isCrit ? 0.45 : 0.28));
@@ -1187,13 +1300,15 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           shield: player.shield,
           maxShield: player.maxShield,
         },
-        effectiveDamage
+        effectiveDamage,
+        relicBonuses.hasAnkhFastRevive
       );
 
       player.hp = res.nextState.hp;
       player.shield = res.nextState.shield;
       player.isDownedScarab = res.nextState.isDownedScarab;
       player.scarabTimer = res.nextState.scarabTimer;
+      player.scarabMaxDuration = res.nextState.scarabMaxDuration;
       player.relicReady = res.nextState.relicReady;
       player.relicCooldown = res.nextState.relicCooldown;
 
@@ -1201,16 +1316,18 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         player.isMounted = false;
         player.isScoped = false;
         player.isCamouflaged = false;
+        player.isGliding = false;
         player.isPropDisguised = false;
+        player.propDisguiseKind = 'none';
         hitstopTimer = 0.06;
         audioEngine.playScarabTransform(false);
         spawnParticleBurst(player.x, player.y + 1.0, player.z, 24, 0xf59e0b, 11, 1.4);
         player.lastHitBanner = {
-          text: 'BABY DRAGON REVIVAL! PRESS [Q] TO DISGUISE AS DESERT PROP!',
+          text: '🐉 BABY DRAGON REVIVAL (12s)! PRESS [Q] OR [X] TO DISGUISE AS AMPHORA / BOULDER / OBELISK!',
           isCrit: true,
           id: Date.now(),
         };
-        player.bannerTimer = 3.2;
+        player.bannerTimer = 3.4;
       } else if (res.eliminated) {
         if (sandboxModeRef.current) {
           // In Sandbox Practice Mode, auto-restore player instead of ending the session
@@ -1259,6 +1376,12 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       }
       player.kills += 1;
       player.magicShards += r.isBoss ? 65 : 25;
+      player.goldCoins += r.isBoss ? 90 : 35;
+      if (player.kills % 2 === 0) {
+        player.healthPotions = Math.min(5, player.healthPotions + 1);
+      } else {
+        player.shieldPotions = Math.min(5, player.shieldPotions + 1);
+      }
       if (isHeadshot) player.headshots += 1;
       player.score += r.isBoss ? 550 : isHeadshot ? 250 : 150;
       if (player.kills % 3 === 0) player.wave += 1;
@@ -1582,6 +1705,7 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       spawnShockwave(player.x, player.y, player.z, 0xfacc15, 7.5, 0.55);
       spawnSkillPillar(player.x, player.y, player.z, 0xfacc15, 3.2, 0.7);
       const spec = HERO_CLASSES[heroClassRef.current];
+      pushLootFeed(`FORGE LV${player.forgeLevel}: ${spec.primaryWeapon.toUpperCase()}`, '#facc15');
       player.lastHitBanner = {
         text: `SANCTUARY FORGE LV${player.forgeLevel}: ${spec.primaryWeapon.toUpperCase()} & ${spec.secondaryWeapon.toUpperCase()} UPGRADED!`,
         isCrit: true,
@@ -1628,22 +1752,31 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
     function triggerAbility(slot: AbilitySlotId) {
       if (stateRef.current !== 'playing' || player.endingTriggered) return;
 
-      // Ride Out Heroes Prop Disguise when in Baby Dragon Revival State!
+      // Ride Out Heroes Multi-Prop Disguise when in Baby Dragon Revival State!
       if (player.isDownedScarab) {
         if (slot === 'q') {
-          player.isPropDisguised = !player.isPropDisguised;
+          player.propDisguiseKind = cycleScarabPropDisguise(player.propDisguiseKind);
+          player.isPropDisguised = player.propDisguiseKind !== 'none';
           audioEngine.playMirageCamouflage();
           spawnParticleBurst(player.x, player.y + 0.6, player.z, 14, 0xfacc15, 8, 1.1);
+          const propLabels: Record<ScarabPropKind, string> = {
+            none: '🐉 BABY DRAGON FORM · PRESS [Q] OR [X] TO DISGUISE!',
+            amphora: '🏺 DISGUISED AS EGYPTIAN AMPHORA URN (STEALTH ACTIVE)!',
+            boulder: '🪨 DISGUISED AS DESERT SANDSTONE BOULDER (STEALTH ACTIVE)!',
+            obelisk: '🗿 DISGUISED AS ANCIENT MINI-OBELISK (STEALTH ACTIVE)!',
+          };
           player.lastHitBanner = {
-            text: player.isPropDisguised
-              ? 'PROP DISGUISE ACTIVE · HIDDEN AS DESERT AMPHORA!'
-              : 'BABY DRAGON FORM · RUN TO COVER!',
-            isCrit: false,
+            text: propLabels[player.propDisguiseKind],
+            isCrit: player.isPropDisguised,
             id: Date.now(),
           };
-          player.bannerTimer = 2.0;
+          player.bannerTimer = 2.2;
         }
         return;
+      }
+
+      if (player.isGliding) {
+        player.isGliding = false;
       }
 
       const cls = heroClassRef.current;
@@ -1653,7 +1786,10 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         return;
       }
 
-      player.cooldowns[slot] = player.sandboxZeroCooldown ? 0.15 : spec.cooldown;
+      const relicBonuses = computeRelicBonuses(player.relics);
+      player.cooldowns[slot] = player.sandboxZeroCooldown
+        ? 0.15
+        : Number((spec.cooldown * relicBonuses.cooldownMultiplier).toFixed(2));
 
       // Universal [V] Desert Raptor Mount across all classes
       if (slot === 'v') {
@@ -1805,16 +1941,14 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           player.auraTimer = spec.duration || 5.0;
           player.auraType = 'bulwark_shield';
           // Knockback & damage nearby foes who stand directly in front of the shield slam
-          for (const r of rivals) {
-            if (r.koTimer === 0 && Math.hypot(r.x - player.x, r.z - player.z) <= 5.5) {
-              r.hp = Math.max(0, r.hp - 28);
-              r.snaredTimer = Math.max(r.snaredTimer, 1.4);
-              r.hitFlashTimer = 0.12;
-              player.damageDealt += 28;
-              spawnFloatingDamage(r.x, r.y + 1.8, r.z, 28, false, '#2dd4bf', 'SHIELD SLAM');
-              checkAndHandleRivalElimination(r, 'Sea Ward Shield', false);
-            }
-          }
+          forEachRivalInRadius(player.x, player.z, 5.5, (r) => {
+            r.hp = Math.max(0, r.hp - 28);
+            r.snaredTimer = Math.max(r.snaredTimer, 1.4);
+            r.hitFlashTimer = 0.12;
+            player.damageDealt += 28;
+            spawnFloatingDamage(r.x, r.y + 1.8, r.z, 28, false, '#2dd4bf', 'SHIELD SLAM');
+            checkAndHandleRivalElimination(r, 'Sea Ward Shield', false);
+          });
           audioEngine.playScarabTransform(true);
           spawnParticleBurst(player.x, player.y + 1.2, player.z, 26, 0x2dd4bf, 10, 1.35);
           spawnShockwave(player.x, player.y, player.z, 0x2dd4bf, 6.8, 0.48);
@@ -1856,16 +1990,14 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           snareVisual.vortexFunnelMesh.visible = true;
           snareGroup.position.set(player.snareX, player.snareY, player.snareZ);
           snareGroup.visible = true;
-          for (const r of rivals) {
-            if (r.koTimer === 0 && Math.hypot(r.x - player.snareX, r.z - player.snareZ) <= 6.2) {
-              r.hp = Math.max(0, r.hp - 36);
-              r.snaredTimer = 3.2;
-              r.hitFlashTimer = 0.14;
-              player.damageDealt += 36;
-              spawnFloatingDamage(r.x, r.y + 1.8, r.z, 36, false, '#2dd4bf', 'WAVE VORTEX');
-              checkAndHandleRivalElimination(r, 'Wave Vortex', false);
-            }
-          }
+          forEachRivalInRadius(player.snareX, player.snareZ, 6.2, (r) => {
+            r.hp = Math.max(0, r.hp - 36);
+            r.snaredTimer = 3.2;
+            r.hitFlashTimer = 0.14;
+            player.damageDealt += 36;
+            spawnFloatingDamage(r.x, r.y + 1.8, r.z, 36, false, '#2dd4bf', 'WAVE VORTEX');
+            checkAndHandleRivalElimination(r, 'Wave Vortex', false);
+          });
           audioEngine.playMirageCamouflage();
           spawnParticleBurst(player.snareX, player.snareY + 1.0, player.snareZ, 26, 0x2dd4bf, 11, 1.35);
           spawnShockwave(player.snareX, player.snareY, player.snareZ, 0x2dd4bf, 7.0, 0.5);
@@ -2025,15 +2157,13 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           spawnSkillPillar(bx, by, bz, 0xf97316, 5.2, 0.6);
           audioEngine.playHitImpact(true, false);
           cameraTrauma = Math.min(1, cameraTrauma + 0.28);
-          for (const r of rivals) {
-            if (r.koTimer === 0 && Math.hypot(r.x - bx, r.z - bz) <= 7.0) {
-              r.hp = Math.max(0, r.hp - 56);
-              r.burnTimer = 3.5;
-              r.hitFlashTimer = 0.15;
-              player.damageDealt += 56;
-              checkAndHandleRivalElimination(r, 'Sticky Bomb', false);
-            }
-          }
+          forEachRivalInRadius(bx, bz, 7.0, (r) => {
+            r.hp = Math.max(0, r.hp - 56);
+            r.burnTimer = 3.5;
+            r.hitFlashTimer = 0.15;
+            player.damageDealt += 56;
+            checkAndHandleRivalElimination(r, 'Sticky Bomb', false);
+          });
           player.lastHitBanner = {
             text: 'STICKY BOMB DETONATION · 56 AOE FIRE DMG + INCENDIARY BURN!',
             isCrit: true,
@@ -2096,15 +2226,13 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           player.y = safeStep.y;
           player.auraTimer = 1.6;
           player.auraType = 'whirl_dance';
-          for (const r of rivals) {
-            if (r.koTimer === 0 && Math.hypot(r.x - player.x, r.z - player.z) <= 6.5) {
-              r.hp = Math.max(0, r.hp - 48);
-              r.hitFlashTimer = 0.15;
-              player.damageDealt += 48;
-              spawnParticleBurst(r.x, r.y + 1.2, r.z, 18, 0xe879f9, 10, 1.25);
-              checkAndHandleRivalElimination(r, 'Whirl Dance', true);
-            }
-          }
+          forEachRivalInRadius(player.x, player.z, 6.5, (r) => {
+            r.hp = Math.max(0, r.hp - 48);
+            r.hitFlashTimer = 0.15;
+            player.damageDealt += 48;
+            spawnParticleBurst(r.x, r.y + 1.2, r.z, 18, 0xe879f9, 10, 1.25);
+            checkAndHandleRivalElimination(r, 'Whirl Dance', true);
+          });
           audioEngine.playHitImpact(true, false);
           spawnParticleBurst(player.x, player.y + 1.0, player.z, 26, 0xa855f7, 12, 1.35);
           spawnShockwave(player.x, player.y, player.z, 0xe879f9, 7.0, 0.48);
@@ -2332,15 +2460,13 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           snareVisual.vortexFunnelMesh.visible = true;
           snareGroup.position.set(player.snareX, player.snareY, player.snareZ);
           snareGroup.visible = true;
-          for (const r of rivals) {
-            if (r.koTimer === 0 && Math.hypot(r.x - player.snareX, r.z - player.snareZ) <= 6.0) {
-              r.hp = Math.max(0, r.hp - 40);
-              r.snaredTimer = 3.5;
-              r.hitFlashTimer = 0.14;
-              player.damageDealt += 40;
-              checkAndHandleRivalElimination(r, 'Flood Trap', false);
-            }
-          }
+          forEachRivalInRadius(player.snareX, player.snareZ, 6.0, (r) => {
+            r.hp = Math.max(0, r.hp - 40);
+            r.snaredTimer = 3.5;
+            r.hitFlashTimer = 0.14;
+            player.damageDealt += 40;
+            checkAndHandleRivalElimination(r, 'Flood Trap', false);
+          });
           audioEngine.playHitImpact(true, false);
           spawnParticleBurst(player.snareX, player.snareY + 1.2, player.snareZ, 26, 0x38bdf8, 12, 1.4);
           spawnShockwave(player.snareX, player.snareY, player.snareZ, 0x38bdf8, 6.5, 0.5);
@@ -2361,16 +2487,14 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           spawnSkillPillar(tx, ty, tz, 0x0ea5e9, 5.5, 0.75);
           cameraTrauma = Math.min(1, cameraTrauma + 0.35);
           audioEngine.playHitImpact(true, true);
-          for (const r of rivals) {
-            if (r.koTimer === 0 && Math.hypot(r.x - tx, r.z - tz) <= 8.0) {
-              r.hp = Math.max(0, r.hp - 68);
-              r.snaredTimer = 2.6;
-              r.windupTimer = 0;
-              r.hitFlashTimer = 0.18;
-              player.damageDealt += 68;
-              checkAndHandleRivalElimination(r, 'Water Spear Cataclysm', true);
-            }
-          }
+          forEachRivalInRadius(tx, tz, 8.0, (r) => {
+            r.hp = Math.max(0, r.hp - 68);
+            r.snaredTimer = 2.6;
+            r.windupTimer = 0;
+            r.hitFlashTimer = 0.18;
+            player.damageDealt += 68;
+            checkAndHandleRivalElimination(r, 'Water Spear Cataclysm', true);
+          });
           player.lastHitBanner = {
             text: 'WATER SPEAR CATACLYSM · 68 AOE TIDAL SHOCKWAVE & STUN!',
             isCrit: true,
@@ -2451,16 +2575,14 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           spawnShockwave(sx, sy, sz, 0x22d3ee, 6.8, 0.48);
           spawnSkillPillar(sx, sy, sz, 0x22d3ee, 4.6, 0.6);
           audioEngine.playHitImpact(true, false);
-          for (const r of rivals) {
-            if (r.koTimer === 0 && Math.hypot(r.x - sx, r.z - sz) <= 6.2) {
-              r.hp = Math.max(0, r.hp - 48);
-              r.snaredTimer = 2.4;
-              r.windupTimer = 0;
-              r.hitFlashTimer = 0.14;
-              player.damageDealt += 48;
-              checkAndHandleRivalElimination(r, 'Psychic Shock', false);
-            }
-          }
+          forEachRivalInRadius(sx, sz, 6.2, (r) => {
+            r.hp = Math.max(0, r.hp - 48);
+            r.snaredTimer = 2.4;
+            r.windupTimer = 0;
+            r.hitFlashTimer = 0.14;
+            player.damageDealt += 48;
+            checkAndHandleRivalElimination(r, 'Psychic Shock', false);
+          });
           player.lastHitBanner = {
             text: 'PSYCHIC SHOCK · 48 AOE PLASMA BLAST & 2.4s MENTAL DAZE!',
             isCrit: true,
@@ -2519,30 +2641,444 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           };
           player.bannerTimer = 2.5;
         }
+        return;
+      }
+
+      // ========================================================================
+      // 8. TESLA · ELECTROMANCER (Deployed Turret & Static Trap Field)
+      // ========================================================================
+      if (cls === 'tesla') {
+        if (slot === 'q') {
+          // LIGHTNING TURRET: Deploys an active 3D Tesla Coil Turret that auto-zaps nearby rivals!
+          player.turretActive = true;
+          player.turretTimer = spec.duration || 12.0;
+          player.turretFireCooldown = 0.25;
+          const safeTurretPos = resolveSafeTeleportPosition(
+            player.x + Math.sin(player.camYaw) * 2.6,
+            player.z + Math.cos(player.camYaw) * 2.6,
+            player.y,
+            0.75
+          );
+          player.turretX = safeTurretPos.x;
+          player.turretZ = safeTurretPos.z;
+          player.turretY = safeTurretPos.y;
+          teslaTurretRig.group.position.set(player.turretX, player.turretY, player.turretZ);
+          teslaTurretRig.group.visible = true;
+          audioEngine.playScarabTransform(true);
+          spawnParticleBurst(player.turretX, player.turretY + 1.2, player.turretZ, 26, 0x38bdf8, 10, 1.35);
+          spawnShockwave(player.turretX, player.turretY, player.turretZ, 0x38bdf8, 6.5, 0.48);
+          player.lastHitBanner = {
+            text: '⚡ DEPLOYED 3D TESLA LIGHTNING TURRET (12s AUTO-ZAP SENTRY)!',
+            isCrit: true,
+            id: Date.now(),
+          };
+          player.bannerTimer = 2.5;
+        } else if (slot === 'e') {
+          // MAGNETIC SURGE: High-voltage dash + +40 Shield restore + shock nova
+          player.shield = Math.min(player.maxShield, player.shield + 40);
+          player.auraTimer = spec.duration || 4.0;
+          player.auraType = 'magnetic_surge';
+          player.dashTimer = 0.3;
+          player.dashSpeed = 25.0;
+          player.dashRamDamage = 36;
+          player.dashDirX = Math.sin(player.camYaw);
+          player.dashDirZ = Math.cos(player.camYaw);
+          audioEngine.playGrappleLaunch();
+          spawnParticleBurst(player.x, player.y + 1.0, player.z, 22, 0x38bdf8, 11, 1.25);
+          spawnShockwave(player.x, player.y, player.z, 0x38bdf8, 5.8, 0.42);
+          player.lastHitBanner = {
+            text: 'MAGNETIC SURGE · +40 SHIELD & HIGH-VOLTAGE BLINK DASH!',
+            isCrit: true,
+            id: Date.now(),
+          };
+          player.bannerTimer = 2.2;
+        } else if (slot === 'c') {
+          // STATIC TRAP FIELD: Deploys a paralyzing electromagnetic lattice on target
+          player.snareActive = true;
+          player.snareMode = 'root';
+          player.snareTimer = spec.duration || 5.0;
+          player.snareX = targetRival ? targetRival.x : player.x + Math.sin(player.camYaw) * 9.0;
+          player.snareZ = targetRival ? targetRival.z : player.z + Math.cos(player.camYaw) * 9.0;
+          player.snareY = groundHeightAt(player.snareX, player.snareZ);
+          snareVisual.outerRingMat.color.setHex(0x38bdf8);
+          snareVisual.coreOrbMat.color.setHex(0xfacc15);
+          snareVisual.vineSpikesGroup.visible = true;
+          snareVisual.vortexFunnelMesh.visible = false;
+          snareGroup.position.set(player.snareX, player.snareY, player.snareZ);
+          snareGroup.visible = true;
+          forEachRivalInRadius(player.snareX, player.snareZ, 6.5, (r) => {
+            r.hp = Math.max(0, r.hp - 44);
+            r.snaredTimer = 2.8;
+            r.windupTimer = 0;
+            r.hitFlashTimer = 0.14;
+            player.damageDealt += 44;
+            checkAndHandleRivalElimination(r, 'Static Trap Field', false);
+          });
+          audioEngine.playHitImpact(true, false);
+          spawnParticleBurst(player.snareX, player.snareY + 1.1, player.snareZ, 24, 0x38bdf8, 11, 1.35);
+          spawnShockwave(player.snareX, player.snareY, player.snareZ, 0x38bdf8, 6.8, 0.48);
+          player.lastHitBanner = {
+            text: 'STATIC TRAP FIELD · 44 AOE SHOCK DMG & 2.8s PARALYSIS!',
+            isCrit: true,
+            id: Date.now(),
+          };
+          player.bannerTimer = 2.3;
+        } else if (slot === 'r') {
+          // SUPERCONDUCTOR OVERLOAD: Calls down chain lightning pillars + overdrives Turret
+          player.auraTimer = spec.duration || 6.0;
+          player.auraType = 'magnetic_surge';
+          if (player.turretActive) {
+            player.turretTimer = Math.max(player.turretTimer, 10.0);
+          }
+          const { affected, vfxTargets } = selectBoundedAoETargets(player.x, player.z, rivals, 26, 6);
+          for (const r of affected) {
+            r.hp = Math.max(0, r.hp - 62);
+            r.snaredTimer = 2.6;
+            r.windupTimer = 0;
+            r.hitFlashTimer = 0.16;
+            player.damageDealt += 62;
+            spawnFloatingDamage(r.x, r.y + 1.9, r.z, 62, true, '#38bdf8', 'OVERLOAD');
+            checkAndHandleRivalElimination(r, 'Superconductor Overload', false);
+          }
+          for (const r of vfxTargets) {
+            spawnParticleBurst(r.x, r.y + 1.4, r.z, 20, 0x38bdf8, 12, 1.4);
+            spawnSkillPillar(r.x, r.y, r.z, 0x38bdf8, 4.2, 0.65);
+          }
+          cameraTrauma = Math.min(1, cameraTrauma + 0.34);
+          audioEngine.playClassWeaponFire('tesla', 2, 1.0, false);
+          spawnShockwave(player.x, player.y, player.z, 0x38bdf8, 10.5, 0.58);
+          player.lastHitBanner = {
+            text: `SUPERCONDUCTOR OVERLOAD · ${Math.max(1, affected.length)} RIVALS STRUCK BY 62 AOE CHAIN LIGHTNING!`,
+            isCrit: true,
+            id: Date.now(),
+          };
+          player.bannerTimer = 2.7;
+        }
+        return;
+      }
+
+      // ========================================================================
+      // 9. CLAUDIA · FROST WEAVER (Ice Block Sanctuary & Blizzard Control)
+      // ========================================================================
+      if (cls === 'claudia') {
+        if (slot === 'q') {
+          // ICE BLOCK SANCTUARY: Encases Claudia in crystal ice, granting invulnerability + +65 HP & +45 Shield
+          player.auraTimer = spec.duration || 4.0;
+          player.auraType = 'ice_block';
+          player.hp = Math.min(player.maxHp, player.hp + 65);
+          player.shield = Math.min(player.maxShield, player.shield + 45);
+          audioEngine.playScarabTransform(true);
+          spawnParticleBurst(player.x, player.y + 1.2, player.z, 28, 0x67e8f9, 10, 1.4);
+          spawnSkillPillar(player.x, player.y, player.z, 0x67e8f9, 3.2, 0.7);
+          spawnFloatingDamage(player.x, player.y + 2.0, player.z, 65, true, '#67e8f9', '❄️ ICE BLOCK +65 HP');
+          player.lastHitBanner = {
+            text: '❄️ ICE BLOCK SANCTUARY · INVULNERABLE CRYSTAL +65 HP & +45 SHIELD!',
+            isCrit: true,
+            id: Date.now(),
+          };
+          player.bannerTimer = 2.5;
+        } else if (slot === 'e') {
+          // GLACIAL BLINK: Instant frost teleport + leaves freezing shatter nova behind
+          spawnShockwave(player.x, player.y, player.z, 0x67e8f9, 5.5, 0.42);
+          forEachRivalInRadius(player.x, player.z, 5.5, (r) => {
+            r.hp = Math.max(0, r.hp - 34);
+            r.snaredTimer = 2.4;
+            r.hitFlashTimer = 0.12;
+            player.damageDealt += 34;
+            checkAndHandleRivalElimination(r, 'Glacial Blink', false);
+          });
+          player.dashTimer = 0.28;
+          player.dashSpeed = 26.0;
+          player.dashRamDamage = 0;
+          player.dashDirX = Math.sin(player.camYaw);
+          player.dashDirZ = Math.cos(player.camYaw);
+          audioEngine.playGrappleLaunch();
+          spawnParticleBurst(player.x, player.y + 1.0, player.z, 22, 0x67e8f9, 10, 1.3);
+          player.lastHitBanner = {
+            text: 'GLACIAL BLINK · FROST TELEPORT & SHATTER NOVA!',
+            isCrit: false,
+            id: Date.now(),
+          };
+          player.bannerTimer = 2.2;
+        } else if (slot === 'c') {
+          // PERMAFROST NOVA: Deep-freezes enemies around target with crystal spikes
+          const fx = targetRival ? targetRival.x : player.x + Math.sin(player.camYaw) * 9.0;
+          const fz = targetRival ? targetRival.z : player.z + Math.cos(player.camYaw) * 9.0;
+          const fy = groundHeightAt(fx, fz);
+          spawnParticleBurst(fx, fy + 1.2, fz, 28, 0x67e8f9, 12, 1.45);
+          spawnShockwave(fx, fy, fz, 0x67e8f9, 7.2, 0.5);
+          spawnSkillPillar(fx, fy, fz, 0x38bdf8, 4.8, 0.6);
+          audioEngine.playHitImpact(true, false);
+          forEachRivalInRadius(fx, fz, 6.8, (r) => {
+            r.hp = Math.max(0, r.hp - 48);
+            r.snaredTimer = 3.2;
+            r.windupTimer = 0;
+            r.hitFlashTimer = 0.15;
+            player.damageDealt += 48;
+            checkAndHandleRivalElimination(r, 'Permafrost Nova', false);
+          });
+          player.lastHitBanner = {
+            text: 'PERMAFROST NOVA · 48 AOE FROST DMG & 3.2s DEEP FREEZE!',
+            isCrit: true,
+            id: Date.now(),
+          };
+          player.bannerTimer = 2.4;
+        } else if (slot === 'r') {
+          // ABSOLUTE ZERO BLIZZARD: Summons a swirling arctic blizzard storm that freezes & crushes rivals
+          player.snareActive = true;
+          player.snareMode = 'vortex';
+          player.snareTimer = spec.duration || 6.0;
+          player.snareX = targetRival ? targetRival.x : player.x + Math.sin(player.camYaw) * 10.0;
+          player.snareZ = targetRival ? targetRival.z : player.z + Math.cos(player.camYaw) * 10.0;
+          player.snareY = groundHeightAt(player.snareX, player.snareZ);
+          snareVisual.outerRingMat.color.setHex(0x67e8f9);
+          snareVisual.coreOrbMat.color.setHex(0x38bdf8);
+          snareVisual.vortexFunnelMat.color.setHex(0x67e8f9);
+          snareVisual.vineSpikesGroup.visible = true;
+          snareVisual.vortexFunnelMesh.visible = true;
+          snareGroup.position.set(player.snareX, player.snareY, player.snareZ);
+          snareGroup.visible = true;
+          const { affected, vfxTargets } = selectBoundedAoETargets(player.snareX, player.snareZ, rivals, 14, 6);
+          for (const r of affected) {
+            r.hp = Math.max(0, r.hp - 64);
+            r.snaredTimer = 3.8;
+            r.windupTimer = 0;
+            r.hitFlashTimer = 0.16;
+            player.damageDealt += 64;
+            spawnFloatingDamage(r.x, r.y + 1.9, r.z, 64, true, '#67e8f9', 'BLIZZARD');
+            checkAndHandleRivalElimination(r, 'Absolute Zero Blizzard', false);
+          }
+          for (const r of vfxTargets) {
+            spawnParticleBurst(r.x, r.y + 1.4, r.z, 20, 0x67e8f9, 11, 1.35);
+          }
+          cameraTrauma = Math.min(1, cameraTrauma + 0.32);
+          audioEngine.playClassWeaponFire('claudia', 1, 1.0, true);
+          spawnShockwave(player.snareX, player.snareY, player.snareZ, 0x67e8f9, 9.5, 0.55);
+          spawnSkillPillar(player.snareX, player.snareY, player.snareZ, 0x67e8f9, 5.5, 0.7);
+          player.lastHitBanner = {
+            text: '❄️ ABSOLUTE ZERO BLIZZARD · ARCTIC VORTEX UNLEASHED (64 AOE DMG)!',
+            isCrit: true,
+            id: Date.now(),
+          };
+          player.bannerTimer = 2.7;
+        }
+        return;
       }
     }
 
+    /**
+     * Ride Out Heroes Tactical Potion Pouch ([Z] Health Potion / [X] Shield Potion or Multi-Prop Disguise)
+     */
+    function useHealthPotion() {
+      if (stateRef.current !== 'playing' || player.isDownedScarab || player.endingTriggered) return;
+      if (player.healthPotions <= 0 && !sandboxModeRef.current) {
+        player.lastHitBanner = {
+          text: 'NO HEALTH POTIONS LEFT · LOOT CHESTS OR ELIMINATE RIVALS!',
+          isCrit: false,
+          id: Date.now(),
+        };
+        player.bannerTimer = 1.8;
+        return;
+      }
+      if (!sandboxModeRef.current) {
+        player.healthPotions = Math.max(0, player.healthPotions - 1);
+      }
+      player.hp = Math.min(player.maxHp, player.hp + 55);
+      audioEngine.playPotionDrink(false);
+      spawnParticleBurst(player.x, player.y + 1.1, player.z, 18, 0x10b981, 8, 1.15);
+      spawnFloatingDamage(player.x, player.y + 1.9, player.z, 55, true, '#10b981', '+55 HP POTION');
+      pushLootFeed('SOLAR NECTAR (+55 HP)', '#10b981');
+      player.lastHitBanner = {
+        text: `🧪 USED SOLAR NECTAR POTION (+55 VITALITY · ${player.healthPotions} LEFT)`,
+        isCrit: false,
+        id: Date.now(),
+      };
+      player.bannerTimer = 2.0;
+    }
+
+    function useShieldPotionOrDisguise() {
+      if (stateRef.current !== 'playing' || player.endingTriggered) return;
+      if (player.isDownedScarab) {
+        triggerAbility('q');
+        return;
+      }
+      if (player.shieldPotions <= 0 && !sandboxModeRef.current) {
+        player.lastHitBanner = {
+          text: 'NO SHIELD POTIONS LEFT · LOOT CHESTS OR PRAY AT SHRINES!',
+          isCrit: false,
+          id: Date.now(),
+        };
+        player.bannerTimer = 1.8;
+        return;
+      }
+      if (!sandboxModeRef.current) {
+        player.shieldPotions = Math.max(0, player.shieldPotions - 1);
+      }
+      player.shield = Math.min(player.maxShield, player.shield + 55);
+      audioEngine.playPotionDrink(true);
+      spawnParticleBurst(player.x, player.y + 1.1, player.z, 18, 0x38bdf8, 8, 1.15);
+      spawnFloatingDamage(player.x, player.y + 1.9, player.z, 55, true, '#38bdf8', '+55 SHIELD POTION');
+      pushLootFeed('AEGIS ELIXIR (+55 SHIELD)', '#38bdf8');
+      player.lastHitBanner = {
+        text: `🛡️ USED AEGIS ELIXIR POTION (+55 SHIELD · ${player.shieldPotions} LEFT)`,
+        isCrit: false,
+        id: Date.now(),
+      };
+      player.bannerTimer = 2.0;
+    }
+
+    /**
+     * Ride Out Heroes Sanctuary Prayer Shrine & Loot Disassembly ([F]):
+     * Grants a new Relic from RELIC_CATALOG (up to 6 slots), upgrades Armor Tier (Lv1..Lv4), and converts Gold Coins!
+     */
+    function triggerPrayerOrDisassemble() {
+      if (stateRef.current !== 'playing' || player.isDownedScarab || player.endingTriggered) return;
+      const nearbyShrine = SANCTUARY_SHRINES.find(
+        (sh) => Math.hypot(player.x - sh.x, player.z - sh.z) <= 8.5
+      );
+      const goldCost = nearbyShrine ? 25 : 45;
+      if (player.goldCoins < goldCost && !sandboxModeRef.current) {
+        player.lastHitBanner = {
+          text: `NEED ${goldCost} GOLD COINS FOR SANCTUARY PRAYER / ARMOR UPGRADE (HAVE ${player.goldCoins}g)`,
+          isCrit: false,
+          id: Date.now(),
+        };
+        player.bannerTimer = 2.0;
+        return;
+      }
+      if (!sandboxModeRef.current) {
+        player.goldCoins -= goldCost;
+      }
+      player.magicShards += 20;
+      player.healthPotions = Math.min(5, player.healthPotions + 1);
+      player.shieldPotions = Math.min(5, player.shieldPotions + 1);
+
+      const prevArmor = player.armorTier;
+      if (player.armorTier < 4) {
+        player.armorTier = (player.armorTier + 1) as ArmorTier;
+      }
+
+      const unownedRelics = ALL_RELIC_IDS.filter((rid) => !player.relics.includes(rid));
+      let newlyGrantedRelic: RelicId | null = null;
+      if (unownedRelics.length > 0) {
+        newlyGrantedRelic = unownedRelics[0];
+        player.relics = [...player.relics, newlyGrantedRelic];
+      }
+
+      const vitals = computeEffectivePlayerVitals(heroClassRef.current, player.armorTier, player.relics);
+      const armorSpec = ARMOR_TIER_SPECS[player.armorTier];
+      player.maxHp = vitals.maxHp;
+      player.maxShield = vitals.maxShield;
+      player.hp = Math.min(player.maxHp, player.hp + 40);
+      player.shield = player.maxShield;
+
+      audioEngine.playRelicOrShrineChime(player.armorTier === 4);
+      audioEngine.playCombatAnnouncer('forge_upgrade');
+      spawnParticleBurst(player.x, player.y + 1.2, player.z, 28, player.armorTier === 4 ? 0xfacc15 : 0x10b981, 11, 1.4);
+      spawnShockwave(player.x, player.y, player.z, 0xfacc15, 7.2, 0.5);
+      if (player.armorTier === 4) {
+        spawnSkillPillar(player.x, player.y, player.z, 0xfacc15, 3.8, 0.75);
+      }
+      if (newlyGrantedRelic) {
+        pushLootFeed(
+          `RELIC: ${RELIC_CATALOG[newlyGrantedRelic].name.toUpperCase()} (${RELIC_CATALOG[newlyGrantedRelic].description})`,
+          '#10b981'
+        );
+      }
+      if (player.armorTier > prevArmor) {
+        pushLootFeed(
+          `ARMOR: ${armorSpec.name.toUpperCase()} (+${armorSpec.bonusMaxShield} SHIELD)`,
+          armorSpec.color
+        );
+      }
+      const relicMsg = newlyGrantedRelic
+        ? `RELIC UNLOCKED: ${RELIC_CATALOG[newlyGrantedRelic].name.toUpperCase()}`
+        : '+20 SHARDS & POTIONS RESTOCKED';
+      player.lastHitBanner = {
+        text: `⛩️ ${nearbyShrine ? nearbyShrine.name.toUpperCase() : 'FIELD BLESSING'} · ${armorSpec.name.toUpperCase()} & ${relicMsg}!`,
+        isCrit: true,
+        id: Date.now(),
+      };
+      player.bannerTimer = 2.8;
+    }
+
+    function triggerDiveNow() {
+      if (stateRef.current !== 'playing' || !player.isGliding) return;
+      player.vy = -28.0;
+      audioEngine.playGrappleLaunch();
+      spawnParticleBurst(player.x, player.y, player.z, 18, 0xfacc15, 10, 1.2);
+      player.lastHitBanner = {
+        text: '🦅 SOLAR FALCON FAST DIVE ENGAGED · IMPACT IMMINENT!',
+        isCrit: true,
+        id: Date.now(),
+      };
+      player.bannerTimer = 1.8;
+    }
+
+    function setSkyDropPin(targetX: number, targetZ: number) {
+      const clampedDist = Math.hypot(targetX, targetZ);
+      const maxPinR = ARENA_RADIUS - 6;
+      const clampedX = clampedDist > maxPinR ? (targetX / clampedDist) * maxPinR : targetX;
+      const clampedZ = clampedDist > maxPinR ? (targetZ / clampedDist) * maxPinR : targetZ;
+      player.skyDropPin = {
+        x: Math.round(clampedX * 10) / 10,
+        z: Math.round(clampedZ * 10) / 10,
+        active: true,
+      };
+      if (player.isGliding) {
+        player.camYaw = Math.atan2(clampedX - player.x, clampedZ - player.z);
+        player.rotY = player.camYaw;
+      }
+      audioEngine.playRelicOrShrineChime(false);
+      player.lastHitBanner = {
+        text: `📍 SKY-DROP LANDING PIN SET (${Math.round(clampedX)}m, ${Math.round(clampedZ)}m) · AUTO-GLIDING TO TARGET!`,
+        isCrit: true,
+        id: Date.now(),
+      };
+      player.bannerTimer = 2.4;
+    }
+
     function resetMatchState() {
-      const spec = HERO_CLASSES[heroClassRef.current];
+      const startGroundY = groundHeightAt(0, 18);
       player.x = 0;
       player.z = 18;
-      player.y = groundHeightAt(0, 18);
+      player.isGliding = !sandboxModeRef.current;
+      player.y = player.isGliding ? startGroundY + 26.0 : startGroundY;
       player.visualY = player.y;
       player.vx = 0;
-      player.vy = 0;
+      player.vy = player.isGliding ? -4.8 : 0;
       player.vz = 0;
+      player.grounded = !player.isGliding;
       inputBuffer.clear();
       smoothedCamDist = 7.8;
       player.rotY = Math.PI;
       player.camYaw = Math.PI;
       player.camPitch = -0.04;
-      player.hp = spec.maxHp;
-      player.maxHp = spec.maxHp;
-      player.ghostHp = spec.maxHp;
-      player.shield = spec.maxShield;
-      player.maxShield = spec.maxShield;
+      player.armorTier = 1;
+      player.healthPotions = 2;
+      player.shieldPotions = 2;
+      player.relics = ['sacred_ibis'];
+      const initialVitals = computeEffectivePlayerVitals(
+        heroClassRef.current,
+        player.armorTier,
+        player.relics
+      );
+      player.hp = initialVitals.maxHp;
+      player.maxHp = initialVitals.maxHp;
+      player.ghostHp = initialVitals.maxHp;
+      player.shield = initialVitals.maxShield;
+      player.maxShield = initialVitals.maxShield;
       player.activeWeaponSlot = showroom.weaponSlot;
       player.magicShards = sandboxModeRef.current ? 999 : 40;
+      player.goldCoins = sandboxModeRef.current ? 999 : 60;
+      player.skyDropPin = { x: 0, z: 0, active: false };
+      player.lootFeed = [
+        {
+          id: lootFeedSeq++,
+          text: 'RELIC: SACRED IBIS PLUME (+8% Move Speed)',
+          color: '#10b981',
+        },
+      ];
       player.forgeLevel = 0;
       player.forgeBeamTimer = 0;
       (forgeBeamMesh.material as THREE.MeshBasicMaterial).opacity = 0;
@@ -2557,9 +3093,13 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       player.isMounted = false;
       player.isDownedScarab = false;
       player.isPropDisguised = false;
+      player.propDisguiseKind = 'none';
       player.scarabTimer = 0;
       player.relicReady = true;
       player.relicCooldown = 0;
+      player.turretActive = false;
+      player.turretTimer = 0;
+      teslaTurretRig.group.visible = false;
       player.dashTimer = 0;
       player.dashSpeed = 22.0;
       player.dashRamDamage = 0;
@@ -2593,7 +3133,14 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       player.matchTime = 0;
       player.endingTriggered = false;
       player.pendingOutcome = null;
-      player.lastHitBanner = null;
+      player.lastHitBanner = player.isGliding
+        ? {
+            text: '🦅 SOLAR BARGE SKY-DROP · CLICK MINIMAP TO PIN DROP ZONE OR PRESS [SPACE] TO DIVE!',
+            isCrit: true,
+            id: Date.now(),
+          }
+        : null;
+      player.bannerTimer = player.isGliding ? 3.5 : 0;
       bossAwakenedThisMatch = false;
       stormDamageTickTimer = 0;
       aiKillFeedCooldown = 0;
@@ -2651,9 +3198,11 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         const rivalMaxHp = clsSpec.maxHp + Math.round(clsSpec.maxShield * 0.75);
         r.x = tpl.spawnX;
         r.z = tpl.spawnZ;
-        r.y = groundHeightAt(r.x, r.z);
+        r.y = getEffectiveSurfaceHeight(r.x, r.z, 0).groundY;
         r.maxHp = rivalMaxHp;
         r.hp = rivalMaxHp;
+        r.armorTier = 1;
+        r.aiPotionCooldown = 0;
         r.koTimer = 0;
         r.eliminated = false;
         r.kills = 0;
@@ -2691,6 +3240,11 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       triggerReload,
       triggerInspect,
       triggerForge,
+      useHealthPotion,
+      useShieldPotionOrDisguise,
+      triggerPrayerOrDisassemble,
+      triggerDiveNow,
+      setSkyDropPin,
       toggleScope: () => {
         if (stateRef.current !== 'playing' || player.isDownedScarab) return;
         player.isScoped = !player.isScoped;
@@ -2728,17 +3282,29 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       },
       triggerSandboxMaxForge: () => {
         player.magicShards = Math.max(player.magicShards, 999);
+        player.goldCoins = Math.max(player.goldCoins, 999);
         player.forgeLevel = 3;
+        player.armorTier = 4;
+        player.relics = [...ALL_RELIC_IDS];
+        const vitals = computeEffectivePlayerVitals(
+          heroClassRef.current,
+          player.armorTier,
+          player.relics
+        );
+        player.maxHp = vitals.maxHp;
+        player.maxShield = vitals.maxShield;
         player.hp = player.maxHp;
         player.shield = player.maxShield;
         player.forgeBeamTimer = 1.25;
         forgeBeamMesh.position.set(player.x, groundHeightAt(player.x, player.z), player.z);
         (forgeBeamMesh.material as THREE.MeshBasicMaterial).opacity = 0.28;
+        audioEngine.playRelicOrShrineChime(true);
         audioEngine.playCombatAnnouncer('forge_upgrade');
         spawnParticleBurst(player.x, player.y + 1.2, player.z, 32, 0xfacc15, 12, 1.5);
         spawnShockwave(player.x, player.y, player.z, 0xfacc15, 8.5, 0.55);
+        pushLootFeed('LEGENDARY PHARAOH GOLD ARMOR (LV4) & ALL 6 RELICS', '#facc15');
         player.lastHitBanner = {
-          text: 'SANDBOX · MAX FORGE LV3 MASTERWORK (+54% DMG) & 999 SHARDS!',
+          text: 'SANDBOX · MAX FORGE LV3, LEGENDARY GOLD ARMOR LV4 & ALL 6 RELICS!',
           isCrit: true,
           id: Date.now(),
         };
@@ -2758,7 +3324,7 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         });
         audioEngine.playCombatAnnouncer('chest_open');
         player.lastHitBanner = {
-          text: 'GOLDEN SCARab RELIQUARIES RESPAWNED ACROSS THE ARENA!',
+          text: 'GOLDEN SCARAB RELIQUARIES RESPAWNED ACROSS THE ARENA!',
           isCrit: true,
           id: Date.now(),
         };
@@ -2769,11 +3335,15 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         player.ghostHp = player.maxHp;
         player.shield = player.maxShield;
         player.magicShards = Math.max(player.magicShards, 999);
+        player.goldCoins = Math.max(player.goldCoins, 999);
+        player.healthPotions = 5;
+        player.shieldPotions = 5;
         player.cooldowns = { q: 0, e: 0, c: 0, r: 0, v: 0, dash: 0 };
         player.isDownedScarab = false;
+        player.isGliding = false;
         spawnParticleBurst(player.x, player.y + 1.2, player.z, 24, 0x10b981, 9, 1.2);
         player.lastHitBanner = {
-          text: 'SANDBOX · FULL VITALITY, SHIELD & SKILL COOLDOWNS RESTORED!',
+          text: 'SANDBOX · FULL VITALITY, SHIELD, POTIONS & COOLDOWNS RESTORED!',
           isCrit: false,
           id: Date.now(),
         };
@@ -2824,7 +3394,11 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
 
       if (code === 'Space') {
         e.preventDefault();
-        player.jumpBufferTimer = 0.14;
+        if (player.isGliding) {
+          triggerDiveNow();
+        } else {
+          player.jumpBufferTimer = 0.14;
+        }
       } else if (code === 'Digit1') {
         swapWeapon(1);
       } else if (code === 'Digit2') {
@@ -2850,18 +3424,21 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         triggerAbility('r');
       } else if (code === 'KeyV') {
         triggerAbility('v');
-      } else if (code === 'ShiftLeft' || code === 'AltLeft' || code === 'KeyX') {
+      } else if (code === 'ShiftLeft' || code === 'AltLeft') {
         const { fwd, right } = getWASDInputs();
         triggerDash(fwd, right);
-      } else if (code === 'KeyZ' || code === 'ShiftRight') {
+      } else if (code === 'KeyZ') {
+        useHealthPotion();
+      } else if (code === 'KeyX') {
+        useShieldPotionOrDisguise();
+      } else if (code === 'ShiftRight') {
         player.isScoped = !player.isScoped;
         if (player.isScoped) {
           player.isMounted = false;
           player.weaponInspectTimer = 0;
         }
       } else if (code === 'KeyF') {
-        player.weaponInspectTimer = 0;
-        firePlayerWeapon(player.isScoped ? 1.0 : 0.9);
+        triggerPrayerOrDisassemble();
       }
     };
 
@@ -3040,14 +3617,21 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         scene.add(playerRig.root);
         scene.add(decoyRig.root);
         const spec = HERO_CLASSES[currentBuiltClass];
-        player.maxHp = spec.maxHp;
-        player.hp = spec.maxHp;
-        player.ghostHp = spec.maxHp;
-        player.maxShield = spec.maxShield;
-        player.shield = spec.maxShield;
+        const vitals = computeEffectivePlayerVitals(currentBuiltClass, player.armorTier, player.relics);
+        player.maxHp = vitals.maxHp;
+        player.hp = vitals.maxHp;
+        player.ghostHp = vitals.maxHp;
+        player.maxShield = vitals.maxShield;
+        player.shield = vitals.maxShield;
         player.cooldowns = { q: 0, e: 0, c: 0, r: 0, v: 0, dash: 0 };
         player.auraTimer = 0;
         player.wingsTimer = 0;
+        player.turretActive = false;
+        player.turretTimer = 0;
+        teslaTurretRig.group.visible = false;
+        player.snareActive = false;
+        player.snareTimer = 0;
+        snareGroup.visible = false;
         player.lastHitBanner = {
           text: `SWITCHED TO ${spec.name.toUpperCase()} · [1] ${spec.primaryWeapon.toUpperCase()} / [2] ${spec.secondaryWeapon.toUpperCase()}`,
           isCrit: true,
@@ -3198,14 +3782,15 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
             player.auraTimer = Math.max(0, player.auraTimer - simDt);
             // Atlas's Water's Curse deals continuous AoE hydro damage & slow around him
             if (player.auraType === 'waters_curse') {
-              for (const r of rivals) {
-                if (r.koTimer === 0 && Math.hypot(r.x - player.x, r.z - player.z) <= 6.2) {
-                  r.hp = Math.max(0, r.hp - 16 * simDt);
-                  r.snaredTimer = Math.max(r.snaredTimer, 0.5);
-                  player.damageDealt += 16 * simDt;
-                  checkAndHandleRivalElimination(r, "Water's Curse", false);
-                }
-              }
+              forEachRivalInRadius(player.x, player.z, 6.2, (r) => {
+                r.hp = Math.max(0, r.hp - 16 * simDt);
+                r.snaredTimer = Math.max(r.snaredTimer, 0.5);
+                player.damageDealt += 16 * simDt;
+                checkAndHandleRivalElimination(r, "Water's Curse", false);
+              });
+            } else if (player.auraType === 'ice_block') {
+              player.hp = Math.min(player.maxHp, player.hp + 18 * simDt);
+              player.shield = Math.min(player.maxShield, player.shield + 14 * simDt);
             }
           }
 
@@ -3245,8 +3830,76 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
 
           player.ghostHp = THREE.MathUtils.damp(player.ghostHp, player.hp, 5.5, simDt);
 
+          const activeRelicBonuses = computeRelicBonuses(player.relics);
           if (!player.isDownedScarab && player.shield < player.maxShield) {
-            player.shield = Math.min(player.maxShield, player.shield + 3.0 * simDt);
+            player.shield = Math.min(
+              player.maxShield,
+              player.shield + (3.0 + activeRelicBonuses.shieldRegenPerSec) * simDt
+            );
+          }
+
+          // Tick Deployed 3D Tesla Lightning Turret (Auto-Zaps Rivals within 18m!)
+          if (player.turretActive) {
+            player.turretTimer = Math.max(0, player.turretTimer - simDt);
+            teslaTurretRig.coilHead.rotation.y += simDt * 3.8;
+            teslaTurretRig.arcRing.rotation.z -= simDt * 6.0;
+            player.turretFireCooldown = Math.max(0, player.turretFireCooldown - simDt);
+            if (player.turretFireCooldown === 0) {
+              let bestTurretTarget: RivalActor | null = null as RivalActor | null;
+              let bestTurretDist = 18.0;
+              forEachRivalInRadius(player.turretX, player.turretZ, 18.0, (r) => {
+                if (!r.eliminated) {
+                  const d = Math.hypot(r.x - player.turretX, r.z - player.turretZ);
+                  if (d < bestTurretDist) {
+                    bestTurretDist = d;
+                    bestTurretTarget = r;
+                  }
+                }
+              });
+              if (bestTurretTarget) {
+                player.turretFireCooldown = 0.65;
+                teslaTurretRig.coilHead.rotation.y = Math.atan2(
+                  bestTurretTarget.x - player.turretX,
+                  bestTurretTarget.z - player.turretZ
+                );
+                const p = acquireProjectile();
+                const dx = bestTurretTarget.x - player.turretX;
+                const dy = bestTurretTarget.y + 1.2 - (player.turretY + 1.45);
+                const dz = bestTurretTarget.z - player.turretZ;
+                const dLen = Math.hypot(dx, dy, dz) || 1;
+                p.active = true;
+                p.id = `turret-${Date.now()}`;
+                p.ownerId = mpClient.localPlayerId;
+                p.isPlayerOwned = true;
+                p.x = player.turretX;
+                p.y = player.turretY + 1.45;
+                p.z = player.turretZ;
+                p.vx = (dx / dLen) * 64;
+                p.vy = (dy / dLen) * 64;
+                p.vz = (dz / dLen) * 64;
+                p.damage = 22;
+                p.isCharged = false;
+                p.isScopedShot = false;
+                p.isAmbushShot = false;
+                p.isHighGroundShot = false;
+                p.homingTargetId = bestTurretTarget.id;
+                p.explosiveRadius = 0;
+                p.appliesBurn = false;
+                p.appliesStun = true;
+                p.colorHex = 0x38bdf8;
+                p.visualKind = 'arc_bolt';
+                p.life = 1.6;
+                configureProjectileVisual(p.rig, 'arc_bolt', 0x38bdf8, false);
+                p.rig.root.visible = true;
+                p.rig.root.position.set(p.x, p.y, p.z);
+                p.rig.root.lookAt(p.x + p.vx, p.y + p.vy, p.z + p.vz);
+                spawnParticleBurst(player.turretX, player.turretY + 1.5, player.turretZ, 6, 0x38bdf8, 6, 0.75);
+              }
+            }
+            if (player.turretTimer === 0) {
+              player.turretActive = false;
+              teslaTurretRig.group.visible = false;
+            }
           }
 
           if (player.isDrawing) {
@@ -3300,6 +3953,7 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
             player.ghostHp = player.hp;
             player.shield = scarabTick.nextState.shield;
             player.isPropDisguised = false;
+            player.propDisguiseKind = 'none';
             audioEngine.playScarabTransform(true);
             spawnParticleBurst(player.x, player.y + 1.2, player.z, 26, 0x10b981, 11, 1.35);
             player.lastHitBanner = {
@@ -3344,32 +3998,48 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
               player.vx = player.dashDirX * player.dashSpeed;
               player.vz = player.dashDirZ * player.dashSpeed;
 
-              // Atlas's Water Trajectory rams enemies along the path!
+              // Atlas's Water Trajectory / Tesla's Magnetic Surge rams enemies along the path!
               if (player.dashRamDamage > 0) {
-                for (const r of rivals) {
-                  if (r.koTimer === 0 && Math.hypot(r.x - player.x, r.z - player.z) <= 2.6 && r.hitFlashTimer <= 0) {
+                forEachRivalInRadius(player.x, player.z, 2.6, (r) => {
+                  if (r.hitFlashTimer <= 0) {
                     r.hp = Math.max(0, r.hp - player.dashRamDamage);
                     r.hitFlashTimer = 0.25;
                     r.snaredTimer = 1.5;
                     player.damageDealt += player.dashRamDamage;
                     spawnParticleBurst(r.x, r.y + 1.2, r.z, 18, 0x38bdf8, 10, 1.25);
-                    checkAndHandleRivalElimination(r, 'Water Trajectory', false);
+                    checkAndHandleRivalElimination(r, 'Surge Ram', false);
                   }
-                }
+                });
               }
             } else {
               const baseSpd = HERO_CLASSES[heroClassRef.current].baseSpeed;
-              let speedMult = 1.05;
-              if (player.isMounted) speedMult = 1.65;
-              else if (player.isDownedScarab) speedMult = player.isPropDisguised ? 0.55 : 1.4;
-              else if (player.isCamouflaged) speedMult = heroClassRef.current === 'assassin' ? 1.55 : 1.42;
-              else if (player.auraTimer > 0 && player.auraType === 'corsair_surge') speedMult = 1.54;
-              else if (player.auraTimer > 0 && player.auraType === 'vintage_wine') speedMult = 1.38;
-              else if (player.isScoped) speedMult = 0.75;
+              let speedMult = 1.05 * activeRelicBonuses.speedMultiplier;
+              if (player.isGliding) speedMult *= 1.85;
+              else if (player.isMounted) speedMult *= 1.65;
+              else if (player.isDownedScarab) speedMult *= player.isPropDisguised ? 0.55 : 1.4;
+              else if (player.isCamouflaged) speedMult *= heroClassRef.current === 'assassin' ? 1.55 : 1.42;
+              else if (player.auraTimer > 0 && player.auraType === 'corsair_surge') speedMult *= 1.54;
+              else if (player.auraTimer > 0 && player.auraType === 'vintage_wine') speedMult *= 1.38;
+              else if (player.auraTimer > 0 && player.auraType === 'magnetic_surge') speedMult *= 1.45;
+              else if (player.isScoped) speedMult *= 0.75;
               speedMult *= 1 + player.streakSpeedBonus;
 
-              const targetVx = relMove.moveDirX * baseSpd * speedMult;
-              const targetVz = relMove.moveDirZ * baseSpd * speedMult;
+              let moveDirX = relMove.moveDirX;
+              let moveDirZ = relMove.moveDirZ;
+              if (player.isGliding && player.skyDropPin.active && !relMove.isMoving) {
+                const pinDx = player.skyDropPin.x - player.x;
+                const pinDz = player.skyDropPin.z - player.z;
+                const pinDist = Math.hypot(pinDx, pinDz);
+                if (pinDist > 2.2) {
+                  moveDirX = pinDx / pinDist;
+                  moveDirZ = pinDz / pinDist;
+                } else {
+                  player.skyDropPin.active = false;
+                }
+              }
+
+              const targetVx = moveDirX * baseSpd * speedMult;
+              const targetVz = moveDirZ * baseSpd * speedMult;
               player.vx = THREE.MathUtils.damp(player.vx, targetVx, 18, simDt);
               player.vz = THREE.MathUtils.damp(player.vz, targetVz, 18, simDt);
             }
@@ -3378,9 +4048,11 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
             player.z += player.vz * simDt;
 
             // Physical obstacle collision with solid stone Obelisks & Sniper Perch columns
-            const resolvedPlayerPos = resolveObstacleCollision(player.x, player.z, player.y, 0.75);
-            player.x = resolvedPlayerPos.x;
-            player.z = resolvedPlayerPos.z;
+            if (!player.isGliding) {
+              const resolvedPlayerPos = resolveObstacleCollision(player.x, player.z, player.y, 0.75);
+              player.x = resolvedPlayerPos.x;
+              player.z = resolvedPlayerPos.z;
+            }
 
             const distFromCenter = Math.hypot(player.x, player.z);
             if (distFromCenter > ARENA_RADIUS) {
@@ -3393,37 +4065,61 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
             player.isHighGround = surf.isHighGround;
             player.perchName = surf.perchName;
 
-            player.jumpBufferTimer = Math.max(0, player.jumpBufferTimer - simDt);
-            if (player.grounded) {
-              player.coyoteTimer = 0.12;
-            } else {
-              player.coyoteTimer = Math.max(0, player.coyoteTimer - simDt);
-            }
-
-            if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0) {
-              player.vy = 11.5;
+            if (player.isGliding) {
+              player.vy = player.vy < -15 ? -28.0 : -4.8;
+              player.y += player.vy * simDt;
               player.grounded = false;
-              player.coyoteTimer = 0;
-              player.jumpBufferTimer = 0;
-              player.scaleX = 0.85;
-              player.scaleY = 1.18;
-            }
-
-            // Lilith's Night Wings reduces gravity for smooth aerial hover sniping!
-            const gravityScale = player.wingsTimer > 0 && player.vy < 0 ? 0.22 : 1.0;
-            player.vy -= 26.0 * gravityScale * simDt;
-            player.y += player.vy * simDt;
-
-            if (player.y <= surf.groundY) {
-              if (!player.grounded && player.vy < -4) {
-                player.scaleX = 1.2;
-                player.scaleY = 0.8;
+              if (player.y <= surf.groundY) {
+                player.y = surf.groundY;
+                player.vy = 0;
+                player.isGliding = false;
+                player.skyDropPin.active = false;
+                player.grounded = true;
+                player.scaleX = 1.24;
+                player.scaleY = 0.78;
+                audioEngine.playScarabTransform(true);
+                spawnParticleBurst(player.x, player.y + 0.3, player.z, 22, 0xfacc15, 9, 1.25);
+                spawnShockwave(player.x, player.y, player.z, 0xfacc15, 6.5, 0.45);
+                player.lastHitBanner = {
+                  text: '🦅 TOUCHDOWN IN KARNAK SANCTUM · WEAPONS & SKILLS ONLINE!',
+                  isCrit: true,
+                  id: Date.now(),
+                };
+                player.bannerTimer = 2.4;
               }
-              player.y = surf.groundY;
-              player.vy = 0;
-              player.grounded = true;
             } else {
-              player.grounded = false;
+              player.jumpBufferTimer = Math.max(0, player.jumpBufferTimer - simDt);
+              if (player.grounded) {
+                player.coyoteTimer = 0.12;
+              } else {
+                player.coyoteTimer = Math.max(0, player.coyoteTimer - simDt);
+              }
+
+              if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0) {
+                player.vy = 11.5;
+                player.grounded = false;
+                player.coyoteTimer = 0;
+                player.jumpBufferTimer = 0;
+                player.scaleX = 0.85;
+                player.scaleY = 1.18;
+              }
+
+              // Lilith's Night Wings reduces gravity for smooth aerial hover sniping!
+              const gravityScale = player.wingsTimer > 0 && player.vy < 0 ? 0.22 : 1.0;
+              player.vy -= 26.0 * gravityScale * simDt;
+              player.y += player.vy * simDt;
+
+              if (player.y <= surf.groundY) {
+                if (!player.grounded && player.vy < -4) {
+                  player.scaleX = 1.2;
+                  player.scaleY = 0.8;
+                }
+                player.y = surf.groundY;
+                player.vy = 0;
+                player.grounded = true;
+              } else {
+                player.grounded = false;
+              }
             }
 
             const stepSpeed = Math.hypot(player.vx, player.vz);
@@ -3462,17 +4158,20 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           playerRig.root.scale.set(player.scaleX, player.scaleY, player.scaleX);
 
           const { right: strafeInput } = getWASDInputs();
-          playerRig.nightWingsGroup.visible = player.wingsTimer > 0 && !player.isScoped;
+          playerRig.nightWingsGroup.visible = (player.wingsTimer > 0 || player.isGliding) && !player.isScoped;
           updateCharacterVisualState(playerRig, {
             isCamouflaged: player.isCamouflaged,
             isMounted: player.isMounted,
             isDownedScarab: player.isDownedScarab,
             isPropDisguised: player.isPropDisguised,
+            propDisguiseKind: player.propDisguiseKind,
+            isGliding: player.isGliding,
             isLocalScoped: player.isScoped,
             isAuraActive: player.auraTimer > 0,
             auraType: player.auraType,
             activeWeaponSlot: player.activeWeaponSlot,
             forgeLevel: player.forgeLevel,
+            armorTier: player.armorTier,
             weaponRecoilTimer: player.weaponRecoilTimer,
             weaponSwapTimer: player.weaponSwapTimer,
             weaponReloadTimer: player.weaponReloadTimer,
@@ -3586,10 +4285,12 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
                 const rad = Math.min(stormState.currentRadius - 6, 26 + Math.random() * 24);
                 r.x = Math.cos(angle) * rad;
                 r.z = Math.sin(angle) * rad;
-                r.y = groundHeightAt(r.x, r.z);
+                r.y = getEffectiveSurfaceHeight(r.x, r.z, r.y).groundY;
                 const clsSpec = HERO_CLASSES[r.heroClass];
                 r.maxHp = Math.round((clsSpec.maxHp + clsSpec.maxShield * 0.75) * (1 + (player.wave - 1) * 0.12));
                 r.hp = r.maxHp;
+                r.armorTier = 1;
+                r.aiPotionCooldown = 0;
                 r.eliminated = false;
                 r.burnTimer = 0;
                 r.snaredTimer = 0;
@@ -3661,23 +4362,60 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
             const engagePlayer =
               r.isBoss ||
               (!player.isCamouflaged &&
-                !(player.isDownedScarab && player.isPropDisguised) &&
+                canRivalDetectDisguisedPlayer(distToPlayer, player.isDownedScarab, player.propDisguiseKind) &&
                 distToPlayer <= 36 &&
                 (!nearestRival || distToPlayer <= nearestRivalDist + 8));
+
+            let fallbackTargetX = 0;
+            let fallbackTargetZ = 0;
+            if (!engagePlayer && !nearestRival) {
+              // Steer unengaged rivals toward the nearest Sanctuary Prayer Shrine inside the safe zone
+              let bestShrineDist = Infinity;
+              for (let sIdx = 0; sIdx < SANCTUARY_SHRINES.length; sIdx++) {
+                const sh = SANCTUARY_SHRINES[sIdx];
+                if (Math.hypot(sh.x, sh.z) <= stormState.currentRadius - 6) {
+                  const sd = Math.hypot(sh.x - r.x, sh.z - r.z);
+                  if (sd < bestShrineDist) {
+                    bestShrineDist = sd;
+                    fallbackTargetX = sh.x;
+                    fallbackTargetZ = sh.z;
+                  }
+                }
+              }
+            }
 
             const targetX = engagePlayer
               ? playerTargetX
               : nearestRival
               ? nearestRival.x
-              : 0;
+              : fallbackTargetX;
             const targetZ = engagePlayer
               ? playerTargetZ
               : nearestRival
               ? nearestRival.z
-              : 0;
+              : fallbackTargetZ;
 
             r.attackCooldown = Math.max(0, r.attackCooldown - simDt);
             r.aiSkirmishCooldown = Math.max(0, r.aiSkirmishCooldown - simDt);
+            r.aiPotionCooldown = Math.max(0, r.aiPotionCooldown - simDt);
+
+            if (!r.isBoss && shouldRefreshSteering) {
+              const aiTactical = evaluateRivalTacticalUpgradeAndHeal({
+                currentHp: r.hp,
+                maxHp: r.maxHp,
+                currentArmorTier: r.armorTier,
+                kills: r.kills,
+                stormPhase: stormState.phase,
+                potionCooldownSec: r.aiPotionCooldown,
+              });
+              r.armorTier = aiTactical.nextArmorTier;
+              r.hp = aiTactical.nextHp;
+              r.aiPotionCooldown = aiTactical.nextPotionCooldownSec;
+              if (aiTactical.usedPotion && distToPlayer <= 42) {
+                spawnParticleBurst(r.x, r.y + 1.2, r.z, 10, 0x10b981, 6, 0.9);
+                spawnFloatingDamage(r.x, r.y + 1.85, r.z, 45, false, '#10b981', '+45 POTION');
+              }
+            }
 
             // Paced AI-vs-AI Skirmish Exchange when fighting another Rival Outrider within 24m
             if (!engagePlayer && nearestRival && nearestRivalDist <= 24 && r.aiSkirmishCooldown === 0) {
@@ -3867,7 +4605,7 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
                 r.strafeSign *= -1;
               }
 
-              r.y = groundHeightAt(r.x, r.z);
+              r.y = getEffectiveSurfaceHeight(r.x, r.z, r.y).groundY;
               if (shouldRefreshSteering) {
                 r.rotY = Math.atan2(targetX - r.x, targetZ - r.z);
               }
@@ -3954,7 +4692,8 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
                 isCamouflaged: false,
                 isMounted: false,
                 isDownedScarab: false,
-                forgeLevel: 0,
+                forgeLevel: rv.armorTier >= 3 ? rv.armorTier - 1 : 0,
+                armorTier: rv.armorTier,
                 burnActive: rv.burnTimer > 0,
                 stunActive: rv.snaredTimer > 0,
                 hitFlashTimer: rv.hitFlashTimer,
@@ -4046,15 +4785,38 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
                 chest.rig.beaconRing.visible = false;
                 player.chestsOpened += 1;
                 player.magicShards += 35;
+                player.goldCoins += 45;
+                player.healthPotions = Math.min(5, player.healthPotions + 1);
+                player.shieldPotions = Math.min(5, player.shieldPotions + 1);
+                const prevChestArmor = player.armorTier;
+                if (player.armorTier < 4) {
+                  player.armorTier = (player.armorTier + 1) as ArmorTier;
+                }
+                const chestVitals = computeEffectivePlayerVitals(
+                  heroClassRef.current,
+                  player.armorTier,
+                  player.relics
+                );
+                player.maxHp = chestVitals.maxHp;
+                player.maxShield = chestVitals.maxShield;
                 player.score += 180;
                 player.hp = Math.min(player.maxHp, player.hp + 35);
-                player.shield = Math.min(player.maxShield, player.shield + 35);
+                player.shield = Math.min(player.maxShield, player.shield + 45);
+                audioEngine.playRelicOrShrineChime(player.armorTier === 4);
                 audioEngine.playCombatAnnouncer('chest_open');
                 spawnParticleBurst(chest.x, chest.y + 1.1, chest.z, 26, 0xfacc15, 10, 1.35);
                 spawnShockwave(chest.x, chest.y, chest.z, 0xfacc15, 6.2, 0.45);
                 spawnFloatingDamage(chest.x, chest.y + 1.6, chest.z, 35, true, '#facc15', 'RELIQUARY +35 SHARDS');
+                if (player.armorTier > prevChestArmor) {
+                  pushLootFeed(
+                    `CHEST: ${ARMOR_TIER_SPECS[player.armorTier].name.toUpperCase()}`,
+                    ARMOR_TIER_SPECS[player.armorTier].color
+                  );
+                } else {
+                  pushLootFeed('RELIQUARY: +35 SHARDS, +45 GOLD & POTIONS', '#facc15');
+                }
                 player.lastHitBanner = {
-                  text: `OPENED ${chest.name.toUpperCase()} · +35 MAGIC SHARDS & +35 VITALITY/SHIELD!`,
+                  text: `OPENED ${chest.name.toUpperCase()} · ${ARMOR_TIER_SPECS[player.armorTier].name.toUpperCase()}, +45 GOLD & POTIONS!`,
                   isCrit: true,
                   id: Date.now(),
                 };
@@ -4150,15 +4912,38 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
                   chest.rig.beaconRing.visible = false;
                   player.chestsOpened += 1;
                   player.magicShards += 35;
+                  player.goldCoins += 45;
+                  player.healthPotions = Math.min(5, player.healthPotions + 1);
+                  player.shieldPotions = Math.min(5, player.shieldPotions + 1);
+                  const prevShotArmor = player.armorTier;
+                  if (player.armorTier < 4) {
+                    player.armorTier = (player.armorTier + 1) as ArmorTier;
+                  }
+                  const shotChestVitals = computeEffectivePlayerVitals(
+                    heroClassRef.current,
+                    player.armorTier,
+                    player.relics
+                  );
+                  player.maxHp = shotChestVitals.maxHp;
+                  player.maxShield = shotChestVitals.maxShield;
                   player.score += 180;
                   player.hp = Math.min(player.maxHp, player.hp + 35);
-                  player.shield = Math.min(player.maxShield, player.shield + 35);
+                  player.shield = Math.min(player.maxShield, player.shield + 45);
+                  audioEngine.playRelicOrShrineChime(player.armorTier === 4);
                   audioEngine.playCombatAnnouncer('chest_open');
                   spawnParticleBurst(chest.x, chest.y + 1.1, chest.z, 26, 0xfacc15, 10, 1.35);
                   spawnShockwave(chest.x, chest.y, chest.z, 0xfacc15, 6.2, 0.45);
                   spawnFloatingDamage(chest.x, chest.y + 1.6, chest.z, 35, true, '#facc15', 'RELIQUARY +35 SHARDS');
+                  if (player.armorTier > prevShotArmor) {
+                    pushLootFeed(
+                      `CHEST: ${ARMOR_TIER_SPECS[player.armorTier].name.toUpperCase()}`,
+                      ARMOR_TIER_SPECS[player.armorTier].color
+                    );
+                  } else {
+                    pushLootFeed('RELIQUARY: +35 SHARDS, +45 GOLD & POTIONS', '#facc15');
+                  }
                   player.lastHitBanner = {
-                    text: `SHOT OPEN ${chest.name.toUpperCase()} · +35 MAGIC SHARDS & +35 VITALITY/SHIELD!`,
+                    text: `SHOT OPEN ${chest.name.toUpperCase()} · ${ARMOR_TIER_SPECS[player.armorTier].name.toUpperCase()}, +45 GOLD & POTIONS!`,
                     isCrit: true,
                     id: Date.now(),
                   };
@@ -4188,8 +4973,9 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
                 });
                 if (hitCheck.hit) {
                   const isHeadshot = hitCheck.isHeadshot;
+                  const relicShotBonuses = computeRelicBonuses(player.relics);
                   const shotRes = calculatePrecisionShotDamage({
-                    baseDamage: p.damage,
+                    baseDamage: Math.round(p.damage * relicShotBonuses.damageMultiplier),
                     drawCharge: p.isCharged ? 1.0 : 0.6,
                     isScoped: p.isScopedShot,
                     isHeadshot,
@@ -4231,12 +5017,9 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
                   if (p.explosiveRadius > 0 || p.visualKind === 'flame_meteor') {
                     spawnShockwave(p.x, r.y, p.z, p.colorHex, Math.max(5.5, p.explosiveRadius * 1.4), 0.48);
                     spawnSkillPillar(p.x, r.y, p.z, p.colorHex, 3.8, 0.5);
-                    for (const other of rivals) {
-                      if (
-                        other.id !== r.id &&
-                        other.koTimer === 0 &&
-                        Math.hypot(other.x - p.x, other.z - p.z) <= p.explosiveRadius
-                      ) {
+                    const splashRadius = Math.max(4.5, p.explosiveRadius);
+                    forEachRivalInRadius(p.x, p.z, splashRadius, (other) => {
+                      if (other.id !== r.id) {
                         const splashDmg = Math.round(shotRes.finalDamage * 0.55);
                         other.hp = Math.max(0, other.hp - splashDmg);
                         other.hitFlashTimer = 0.08;
@@ -4245,13 +5028,15 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
                         spawnFloatingDamage(other.x, other.y + 1.6, other.z, splashDmg, false, '#fb923c', 'SPLASH');
                         checkAndHandleRivalElimination(other, 'AoE Splash', false);
                       }
-                    }
+                    });
                   } else if (
                     p.visualKind === 'longbow_arrow' ||
                     p.visualKind === 'cutlass_wave' ||
                     p.visualKind === 'phantom_rail' ||
                     p.visualKind === 'sea_trident' ||
-                    p.visualKind === 'medusa_orb'
+                    p.visualKind === 'medusa_orb' ||
+                    p.visualKind === 'arc_bolt' ||
+                    p.visualKind === 'frost_lance'
                   ) {
                     spawnShockwave(p.x, r.y, p.z, p.colorHex, shotRes.isCritical ? 4.8 : 3.4, 0.35);
                     if (shotRes.isCritical || p.appliesStun) {
@@ -4261,8 +5046,10 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
 
                   player.damageDealt += shotRes.finalDamage;
                   player.magicShards += 6;
-                  if (player.forgeLevel > 0) {
-                    player.hp = Math.min(player.maxHp, player.hp + player.forgeLevel * 3);
+                  player.goldCoins += 8;
+                  const lifestealHp = Math.round(shotRes.finalDamage * relicShotBonuses.lifestealRatio);
+                  if (player.forgeLevel > 0 || lifestealHp > 0) {
+                    player.hp = Math.min(player.maxHp, player.hp + player.forgeLevel * 3 + lifestealHp);
                   }
                   p.active = false;
                   p.rig.root.visible = false;
@@ -4574,6 +5361,16 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           const minimapActors: LiveHUDTelemetry['minimapActors'] = [
             { x: player.x, z: player.z, kind: 'player' },
           ];
+          if (player.skyDropPin.active) {
+            minimapActors.push({ x: player.skyDropPin.x, z: player.skyDropPin.z, kind: 'drop_pin' });
+          }
+          for (let i = 0; i < SANCTUARY_SHRINES.length; i++) {
+            const sh = SANCTUARY_SHRINES[i];
+            minimapActors.push({ x: sh.x, z: sh.z, kind: 'shrine' });
+          }
+          if (player.turretActive) {
+            minimapActors.push({ x: player.turretX, z: player.turretZ, kind: 'turret' });
+          }
           for (let i = 0; i < rivals.length; i++) {
             const r = rivals[i];
             if (r.koTimer === 0 && !r.eliminated) {
@@ -4589,6 +5386,10 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           for (const [, entry] of remoteRigs.entries()) {
             minimapActors.push({ x: entry.data.x, z: entry.data.z, kind: 'remote' });
           }
+
+          const nearbyShrineNow = SANCTUARY_SHRINES.find(
+            (sh) => Math.hypot(player.x - sh.x, player.z - sh.z) <= 8.5
+          );
 
           const streakInfo = evaluateKillstreak(player.currentStreak);
           const stormTelemetry = computeSolarStormState(player.matchTime);
@@ -4649,6 +5450,19 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
             maxShield: player.maxShield,
             activeWeaponSlot: player.activeWeaponSlot,
             magicShards: player.magicShards,
+            goldCoins: player.goldCoins,
+            armorTier: player.armorTier,
+            healthPotions: player.healthPotions,
+            shieldPotions: player.shieldPotions,
+            relics: player.relics,
+            isGliding: player.isGliding,
+            glidingAltitude: Math.max(0, Math.round(player.y - groundHeightAt(player.x, player.z))),
+            skyDropPin: { ...player.skyDropPin },
+            lootFeed: player.lootFeed,
+            propDisguiseKind: player.propDisguiseKind,
+            teslaTurretActive: player.turretActive,
+            teslaTurretRemaining: player.turretTimer,
+            nearbyShrineName: nearbyShrineNow ? nearbyShrineNow.name : null,
             forgeLevel: player.forgeLevel,
             drawCharge: player.drawCharge,
             isScoped: player.isScoped,
@@ -4775,6 +5589,15 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         activeWeaponSlot: player.activeWeaponSlot,
         activeWeaponName: HERO_CLASSES[heroClassRef.current].weapons[player.activeWeaponSlot].name,
         forgeLevel: player.forgeLevel,
+        armorTier: player.armorTier,
+        goldCoins: player.goldCoins,
+        magicShards: player.magicShards,
+        healthPotions: player.healthPotions,
+        shieldPotions: player.shieldPotions,
+        relics: player.relics,
+        isGliding: player.isGliding,
+        propDisguiseKind: player.propDisguiseKind,
+        teslaTurretActive: player.turretActive,
         hp: Math.round(player.hp),
         shield: Math.round(player.shield),
         auraType: player.auraType,
@@ -4800,12 +5623,19 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           isSoftwareGl,
         }),
         activeProjectiles: activeProjList,
+        skyDropPin: player.skyDropPin,
+        lootFeedCount: player.lootFeed.length,
+        maxHp: player.maxHp,
+        maxShield: player.maxShield,
         shotsFired: player.shotsFired,
         shotsHit: player.shotsHit,
         kills: player.kills,
       });
     };
 
+    if (stateRef.current === 'playing') {
+      resetMatchState();
+    }
     tick();
 
     return () => {
