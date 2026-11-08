@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="45%" r="65%">
+      <stop offset="0%" stop-color="#291a0c" />
+      <stop offset="65%" stop-color="#140c06" />
+      <stop offset="100%" stop-color="#090603" />
+    </radialGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#b45309" />
+    </linearGradient>
+    <linearGradient id="wingGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bgGrad)" />
+  <circle cx="256" cy="256" r="210" fill="none" stroke="url(#goldGrad)" stroke-width="8" opacity="0.55" />
+  <circle cx="256" cy="256" r="184" fill="none" stroke="#10b981" stroke-width="3" stroke-dasharray="14 10" opacity="0.65" />
+  <!-- Solar Wings -->
+  <path d="M68 210 L196 226 L180 264 L84 252 Z M444 210 L316 226 L332 264 L428 252 Z" fill="url(#goldGrad)" />
+  <path d="M92 266 L192 276 L178 308 L112 300 Z M420 266 L320 276 L334 308 L400 300 Z" fill="url(#wingGrad)" opacity="0.9" />
+  <!-- Solar Disc & Khepri Emblem -->
+  <circle cx="256" cy="146" r="34" fill="url(#goldGrad)" />
+  <circle cx="256" cy="146" r="20" fill="#fef9c3" />
+  <!-- Scarab Carapace -->
+  <ellipse cx="256" cy="264" rx="54" ry="70" fill="url(#goldGrad)" stroke="#fef08a" stroke-width="5" />
+  <path d="M204 248 Q256 266 308 248" fill="none" stroke="#140c06" stroke-width="6" />
+  <line x1="256" y1="255" x2="256" y2="332" stroke="#140c06" stroke-width="6" />
+  <!-- Crosshair Precision Lines -->
+  <line x1="256" y1="74" x2="256" y2="438" stroke="#fef08a" stroke-width="4" opacity="0.7" />
+  <line x1="74" y1="256" x2="438" y2="256" stroke="#fef08a" stroke-width="4" opacity="0.7" />
+  <text x="256" y="416" text-anchor="middle" fill="#fef3c7" font-family="Georgia, serif" font-weight="bold" font-size="38" letter-spacing="6">KHEPRI</text>
+</svg>

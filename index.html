@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function () {
+        try {
+          var currentFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : undefined;
+          var desc =
+            Object.getOwnPropertyDescriptor(window, 'fetch') ||
+            Object.getOwnPropertyDescriptor(Window.prototype, 'fetch');
+          if (!desc || desc.configurable !== false) {
+            Object.defineProperty(window, 'fetch', {
+              configurable: true,
+              enumerable: true,
+              get: function () {
+                return currentFetch;
+              },
+              set: function (fn) {
+                if (typeof fn === 'function') {
+                  currentFetch = fn;
+                }
+              },
+            });
+          }
+        } catch (_) {}
+
+        window.addEventListener(
+          'error',
+          function (e) {
+            var msg = String((e && e.message) || '');
+            var file = String((e && e.filename) || '');
+            if (
+              file.indexOf('chrome-extension://') === 0 ||
+              file.indexOf('moz-extension://') === 0 ||
+              msg.indexOf('Cannot set property fetch') !== -1 ||
+              msg.indexOf('WebSocket closed without opened') !== -1
+            ) {
+              e.stopImmediatePropagation();
+              e.preventDefault();
+              return false;
+            }
+          },
+          true
+        );
+
+        window.addEventListener(
+          'unhandledrejection',
+          function (e) {
+            var reason = String((e && e.reason && (e.reason.stack || e.reason.message || e.reason)) || '');
+            if (
+              reason.indexOf('chrome-extension://') !== -1 ||
+              reason.indexOf('moz-extension://') !== -1 ||
+              reason.indexOf('Cannot set property fetch') !== -1 ||
+              reason.indexOf('WebSocket closed without opened') !== -1
+            ) {
+              e.stopImmediatePropagation();
+              e.preventDefault();
+              return false;
+            }
+          },
+          true
+        );
+
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            for (var i = 0; i < regs.length; i++) {
+              var reg = regs[i];
+              var scriptURL =
+                (reg.active && reg.active.scriptURL) ||
+                (reg.installing && reg.installing.scriptURL) ||
+                (reg.waiting && reg.waiting.scriptURL) ||
+                '';
+              if (scriptURL.indexOf('dev-sw.js') !== -1) {
+                reg.unregister();
+              }
+            }
+          }).catch(function () {});
+        }
+      })();
+    </script>
+    <title>Khepri: Outriders of the Sun</title>
+    <meta name="description" content="A real-time multiplayer Egyptian hero arena combat game inspired by Ride Out Heroes, featuring the Medjay Ranger class with precision sniping, desert mirage camouflage, high-ground grappling, and sacred mount resurrection." />
+    <meta property="og:title" content="Khepri: Outriders of the Sun" />
+    <meta property="og:description" content="A real-time multiplayer Egyptian hero arena combat game inspired by Ride Out Heroes, featuring the Medjay Ranger class with precision sniping, desert mirage camouflage, high-ground grappling, and sacred mount resurrection." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#0d0906" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Khepri BR" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

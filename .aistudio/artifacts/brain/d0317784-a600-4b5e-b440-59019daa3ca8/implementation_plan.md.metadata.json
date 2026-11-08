@@ -1,0 +1,6 @@
+{
+  "summary":  "خطة هندسية متكاملة لمراجعة وتطوير محرك لعبة Khepri: Outriders of the Sun (طور 100 مقاتل باتل رويال) بالاستناد إلى أحدث تقنيات تحسين الأداء والسلاسة (Spatial Hash Grid O(1)، Zero-GC Loop، AI Tick Slicing، AAA Spring-Damper Camera & Predictive Framing، Input Buffering، Smooth Step-Up Mantling، وAdaptive Quality Scaler).",
+  "updatedAt":  "2026-11-07T17:57:48.394160460Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

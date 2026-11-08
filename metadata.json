@@ -1,0 +1,6 @@
+{
+  "name": "Khepri: Outriders of the Sun",
+  "description": "A real-time multiplayer Egyptian hero arena combat game inspired by Ride Out Heroes, featuring the Medjay Ranger class with precision sniping, desert mirage camouflage, high-ground grappling, and sacred mount resurrection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
