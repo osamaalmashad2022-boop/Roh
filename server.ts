@@ -286,7 +286,16 @@ async function startServer() {
   });
 
   const server = http.createServer(app);
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', (req, socket, head) => {
+    const reqUrl = req.url || '';
+    if (reqUrl === '/ws' || reqUrl.startsWith('/ws?')) {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+    }
+  });
 
   wss.on('connection', (ws) => {
     let currentRoomId = 'karnak-prime';
@@ -477,7 +486,7 @@ async function startServer() {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: hmrEnabled ? { server } : false,
+        hmr: false,
         watch: hmrEnabled ? {} : null,
       },
       appType: 'spa',
