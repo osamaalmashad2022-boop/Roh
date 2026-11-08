@@ -175,6 +175,33 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({ compact = fa
     }
   };
 
+  const [installerDone, setInstallerDone] = useState(false);
+
+  const handleDownloadPcInstaller = async () => {
+    try {
+      const res = await fetch('/api/download/pc-installer');
+      if (!res.ok) throw new Error('Installer failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'INSTALL_GAME_PC.bat';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setInstallerDone(true);
+      setTimeout(() => setInstallerDone(false), 4000);
+    } catch {
+      const a = document.createElement('a');
+      a.href = '/api/download/pc-installer';
+      a.download = 'INSTALL_GAME_PC.bat';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  };
+
   return (
     <>
       <button
@@ -207,10 +234,10 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({ compact = fa
             <div className="flex items-center justify-between border-b border-amber-500/25 pb-3 mb-4">
               <div>
                 <div className="text-[11px] font-mono-num uppercase tracking-widest text-sky-300">
-                  DIRECT PC DOWNLOAD &amp; GITHUB EXPORT · تحميل وتثبيت اللعبة على الحاسوب
+                  DIRECT PC INSTALLER &amp; DESKTOP LAUNCHER · مثبت اللعبة الرسمي على الحاسوب
                 </div>
                 <h2 className="font-display text-lg md:text-xl font-bold text-amber-200 mt-0.5">
-                  طرق تحميل وتثبيت Khepri: Outriders of the Sun
+                  ملفات تثبيت وتشغيل Khepri: Outriders of the Sun على الكمبيوتر
                 </h2>
               </div>
               <button
@@ -224,50 +251,63 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({ compact = fa
             </div>
 
             <div className="space-y-3.5 text-xs md:text-sm leading-relaxed">
-              {/* Method 1: Direct 1-Click File Download (ZIP + Desktop Launcher) */}
+              {/* Method 1: Direct 1-Click File Download (ZIP + PC Installer + Desktop Launcher) */}
               <div className="p-3.5 rounded-xl bg-[#1c130c] border-2 border-emerald-400/50">
                 <div className="font-bold text-emerald-300 mb-1 flex items-center justify-between">
-                  <span>1. التحميل المباشر بضغطة زر (ملف اللعبة الكامل .ZIP + مشغل Windows)</span>
+                  <span>1. ملف التثبيت الرسمي في ملفات اللعبة (INSTALL_GAME_PC.bat + .ZIP)</span>
                   <span className="text-[10px] font-mono-num px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-200">
-                    تحميل مباشر فوري
+                    متوفر في مجلد اللعبة
                   </span>
                 </div>
                 <p className="text-xs text-amber-100/85 mb-2.5">
-                  يمكنك تنزيل ملف اللعبة الكامل مباشرة الآن (يحتوي على كامل الكود المصدري + ملف{' '}
-                  <code className="text-emerald-300 font-mono-num">START_GAME_WINDOWS.bat</code> للتشغيل التلقائي)، أو
-                  تنزيل مشغل سطح المكتب الفوري لـ Windows:
+                  تمت إضافة ملفات التثبيت الرسمية مباشرة في مجلد اللعبة الرئيسي:{' '}
+                  <code className="text-emerald-300 font-mono-num">INSTALL_GAME_PC.bat</code> (لتثبيت اللعبة وإنشاء
+                  أيقونة على سطح المكتب وقائمة ابدأ) و{' '}
+                  <code className="text-emerald-300 font-mono-num">START_GAME_WINDOWS.bat</code> و{' '}
+                  <code className="text-emerald-300 font-mono-num">Install-Khepri-PC.ps1</code>:
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
                     data-testid="download-project-zip-btn"
                     onClick={handleDownloadZip}
                     disabled={downloadingZip}
-                    className="py-2.5 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-stone-950 font-bold text-xs tracking-wide transition cursor-pointer flex items-center justify-center gap-2 shadow-md"
+                    className="py-2.5 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-stone-950 font-bold text-xs tracking-wide transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
                   >
                     <span>⬇</span>
                     <span>
                       {downloadingZip
-                        ? 'جاري تجهيز ملف الـ ZIP...'
+                        ? 'جاري تجهيز ZIP...'
                         : zipDone
-                          ? '✓ تم بدء تحميل ملف ZIP!'
-                          : 'تحميل اللعبة كاملة (.ZIP)'}
+                          ? '✓ تم بدء التحميل!'
+                          : 'تحميل اللعبة + المثبت (.ZIP)'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="download-pc-installer-btn"
+                    onClick={handleDownloadPcInstaller}
+                    className="py-2.5 px-3 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 border border-amber-400/70 text-amber-100 font-bold text-xs tracking-wide transition cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>🛠</span>
+                    <span>
+                      {installerDone ? '✓ تم تحميل المثبت!' : 'ملف التثبيت (INSTALL_GAME_PC.bat)'}
                     </span>
                   </button>
                   <button
                     type="button"
                     data-testid="download-windows-launcher-btn"
                     onClick={handleDownloadWindowsLauncher}
-                    className="py-2.5 px-3 rounded-lg bg-sky-500/25 hover:bg-sky-500/40 border border-sky-400/70 text-sky-100 font-bold text-xs tracking-wide transition cursor-pointer flex items-center justify-center gap-2"
+                    className="py-2.5 px-3 rounded-lg bg-sky-500/25 hover:bg-sky-500/40 border border-sky-400/70 text-sky-100 font-bold text-xs tracking-wide transition cursor-pointer flex items-center justify-center gap-1.5"
                   >
                     <span>⚡</span>
                     <span>
-                      {launcherDone ? '✓ تم تحميل المشغل!' : 'تحميل مشغل سطح المكتب (.BAT)'}
+                      {launcherDone ? '✓ تم تحميل المشغل!' : 'مشغل فوري (Play-Desktop.bat)'}
                     </span>
                   </button>
                 </div>
                 <div className="mt-2 flex items-center justify-between text-[11px] text-amber-200/75 font-mono-num">
-                  <span>بعد فك الضغط، اضغط مرتين على START_GAME_WINDOWS.bat لتشغيل اللعبة.</span>
+                  <span>بعد فك الضغط، اضغط مرتين على INSTALL_GAME_PC.bat لإنشاء اختصار سطح المكتب وتشغيل اللعبة.</span>
                   <button
                     type="button"
                     data-testid="pwa-copy-cmd"

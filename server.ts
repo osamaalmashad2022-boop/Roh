@@ -235,6 +235,17 @@ async function startServer() {
     res.send(Buffer.from(batContent, 'utf8'));
   });
 
+  app.get('/api/download/pc-installer', (_req, res) => {
+    const installerPath = path.join(__dirname, 'INSTALL_GAME_PC.bat');
+    if (fs.existsSync(installerPath)) {
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', 'attachment; filename="INSTALL_GAME_PC.bat"');
+      res.send(fs.readFileSync(installerPath));
+      return;
+    }
+    res.redirect('/api/download/windows-launcher');
+  });
+
   app.get('/api/download/project-zip', (_req, res) => {
     try {
       const files: Array<{ name: string; data: Buffer }> = [];
@@ -247,6 +258,11 @@ async function startServer() {
         'server.ts',
         'metadata.json',
         '.env.example',
+        'INSTALL_GAME_PC.bat',
+        'START_GAME_WINDOWS.bat',
+        'Install-Khepri-PC.ps1',
+        'install_game_mac_linux.sh',
+        'INSTALL_PC_GUIDE_AR.md',
       ];
 
       for (const rf of rootFiles) {
@@ -258,59 +274,6 @@ async function startServer() {
 
       collectDirectoryFiles(path.join(__dirname, 'src'), `${rootFolder}/src`, files);
       collectDirectoryFiles(path.join(__dirname, 'public'), `${rootFolder}/public`, files);
-
-      const startBat = [
-        '@echo off',
-        'title Khepri: Outriders of the Sun - Local PC Server',
-        'echo ==============================================================',
-        'echo   Khepri: Outriders of the Sun (100-Player Solar Royale)',
-        'echo ==============================================================',
-        'where node >nul 2>nul',
-        'if %errorlevel% neq 0 (',
-        '  echo [!] يرجى تثبيت Node.js اولا من الرابط: https://nodejs.org',
-        '  echo [!] Please install Node.js LTS from https://nodejs.org first.',
-        '  pause',
-        '  exit /b 1',
-        ')',
-        'if not exist "node_modules" (',
-        '  echo [*] Installing game dependencies for the first time (npm install)...',
-        '  call npm install',
-        ')',
-        'echo [*] Starting local server and opening Desktop Game Window...',
-        'start "" cmd /c "timeout /t 3 >nul & (start msedge --app=http://localhost:3000 --start-maximized 2>nul || start chrome --app=http://localhost:3000 --start-maximized 2>nul || start http://localhost:3000)"',
-        'call npm run dev',
-        'pause',
-      ].join('\r\n');
-
-      const startSh = [
-        '#!/usr/bin/env bash',
-        'set -e',
-        'if [ ! -d "node_modules" ]; then',
-        '  echo "Installing game dependencies..."',
-        '  npm install',
-        'fi',
-        'echo "Starting Khepri: Outriders of the Sun on http://localhost:3000 ..."',
-        'npm run dev',
-      ].join('\n');
-
-      const readmeAr = [
-        '# Khepri: Outriders of the Sun (خيبري: فرسان الشمس - باتل رويال 100 مقاتل)',
-        '',
-        '## طريقة تشغيل اللعبة على الحاسوب (Windows / Mac / Linux):',
-        '',
-        '1. تأكد من تثبيت **Node.js** (الإصدار LTS) من الموقع الرسمي: https://nodejs.org',
-        '2. على نظام **Windows**: اضغط مرتين على الملف **`START_GAME_WINDOWS.bat`**، وسيقوم تلقائياً بتثبيت الحزم وتشغيل اللعبة في نافذة تطبيق مستقلة.',
-        '3. أو عبر موجه الأوامر (Terminal):',
-        '   ```bash',
-        '   npm install',
-        '   npm run dev',
-        '   ```',
-        '   ثم افتح الرابط: http://localhost:3000',
-      ].join('\r\n');
-
-      files.push({ name: `${rootFolder}/START_GAME_WINDOWS.bat`, data: Buffer.from(startBat, 'utf8') });
-      files.push({ name: `${rootFolder}/start_game.sh`, data: Buffer.from(startSh, 'utf8') });
-      files.push({ name: `${rootFolder}/README_ARABIC.md`, data: Buffer.from(readmeAr, 'utf8') });
 
       const zipBuffer = buildZipArchive(files);
       res.setHeader('Content-Type', 'application/zip');
